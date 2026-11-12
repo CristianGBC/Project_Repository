@@ -139,3 +139,58 @@ def test_node_checks_run_concurrently() -> None:
 
     assert response.status_code == 200
     assert maximum_active_requests > 1
+
+
+def test_nodes_uses_configured_remote_ip_and_ports(monkeypatch) -> None:
+    remote_urls = {
+        "node-bio": "http://192.168.1.23:8001",
+        "node-phy": "http://192.168.1.23:8002",
+        "node-math": "http://192.168.1.23:8003",
+        "node-chem": "http://192.168.1.23:8004",
+        "node-earth": "http://192.168.1.23:8005",
+        "node-agro": "http://192.168.1.23:8006",
+    }
+    for node_id, url in remote_urls.items():
+        variable = f"NODE_{node_id.removeprefix('node-').upper()}_URL"
+        monkeypatch.setenv(variable, url)
+
+    node_by_port = {
+        int(url.rsplit(":", maxsplit=1)[1]): node_id
+        for node_id, url in remote_urls.items()
+    }
+    requested_urls: set[str] = set()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.add(str(request.url))
+        node_id = node_by_port[request.url.port]
+        return httpx.Response(
+            200,
+            json={
+                "status": "ok",
+                "service": "storage",
+                "node_id": node_id,
+                "school": "Remote storage node",
+            },
+        )
+
+    response = coordinator_request(handler, "/nodes", load_settings())
+
+    assert response.status_code == 200
+    assert all(node["status"] == "healthy" for node in response.json()["nodes"])
+    assert requested_urls == {f"{url}/health" for url in remote_urls.values()}
+
+
+def test_unavailable_remote_node_does_not_affect_coordinator(monkeypatch) -> None:
+    monkeypatch.setenv("NODE_MATH_URL", "http://192.168.1.23:8003")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.port == 8003:
+            raise httpx.ConnectError("remote node offline", request=request)
+        return healthy_response(request)
+
+    settings = load_settings()
+    response = coordinator_request(handler, "/nodes", settings)
+    statuses = statuses_by_id(response.json())
+
+    assert response.status_code == 200
+    assert statuses["node-math"] == "unavailable"

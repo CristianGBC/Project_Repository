@@ -1,9 +1,10 @@
 # YachayRepo
 
 YachayRepo es un proyecto académico de Sistemas Distribuidos para construir y
-evaluar un repositorio institucional tolerante a fallos. La Etapa 2 incorpora
-la comunicación básica entre un coordinador FastAPI y seis nodos lógicos de
-almacenamiento, sin implementar todavía gestión de documentos ni replicación.
+evaluar un repositorio institucional tolerante a fallos. La Etapa 2.1 permite
+ejecutar el coordinador FastAPI y los seis nodos lógicos de almacenamiento en
+dos computadoras Ubuntu, sin implementar todavía gestión documental ni
+replicación.
 
 > No se deben almacenar documentos institucionales reales, confidenciales o
 > sensibles en este entorno académico.
@@ -74,6 +75,7 @@ Project_Repository/
 ├── infrastructure/
 │   ├── docker/
 │   │   ├── compose.yaml
+│   │   ├── .env.example
 │   │   ├── Dockerfile.coordinator
 │   │   └── Dockerfile.storage
 │   └── raspberry/
@@ -81,23 +83,34 @@ Project_Repository/
 ├── prototype/
 ├── experiments/
 └── docs/
+    └── two-host-deployment.md
 ```
 
 `prototype/` y `experiments/` conservan intactos los Workshops 6 y 7. La nueva
 implementación no importa ni modifica esos servicios.
 
-## Levantar los siete servicios
+## Perfiles de despliegue
 
-Requisitos en Ubuntu: Docker Engine con el complemento Docker Compose. Desde la
-raíz del repositorio:
+Compose dispone de perfiles independientes:
+
+- `coordinator`: inicia únicamente el coordinador.
+- `storage`: inicia únicamente los seis nodos.
+
+Para una prueba local completa, activa ambos perfiles:
 
 ```bash
-docker compose -f infrastructure/docker/compose.yaml up --build -d
+docker compose -f infrastructure/docker/compose.yaml \
+  --profile coordinator --profile storage up --build -d
 ```
 
 El coordinador queda disponible en <http://localhost:8000> y la documentación
-interactiva en <http://localhost:8000/docs>. Los puertos de los nodos no se
-publican; se comunican mediante la red interna creada por Compose.
+interactiva en <http://localhost:8000/docs>. En modo local, el coordinador usa
+los nombres de los servicios dentro de la red de Compose.
+
+Para el despliegue distribuido, Host B publica los nodos en los puertos
+`8001–8006`; Host A recibe sus URLs mediante variables de entorno. La guía
+completa y los comandos separados para ambos equipos están en
+[`docs/two-host-deployment.md`](docs/two-host-deployment.md).
 
 Verificar la API:
 
@@ -170,6 +183,10 @@ que las seis consultas se inicien concurrentemente.
 - Un nodo solo se clasifica como `healthy` si devuelve HTTP satisfactorio, JSON
   válido, `status=ok`, `service=storage` y el identificador esperado.
 - Cada nodo posee un volumen Docker independiente montado en `/data`.
+- Los perfiles permiten ejecutar coordinador y almacenamiento en hosts
+  diferentes sin dependencias obligatorias entre servicios.
+- Las URLs remotas y el timeout llegan al contenedor coordinador mediante
+  variables de entorno configurables.
 - Las imágenes se basan en Python `slim`, sin dependencias específicas de x86 ni
   una plataforma `linux/amd64` forzada, para permitir builds ARM64 posteriores.
 
