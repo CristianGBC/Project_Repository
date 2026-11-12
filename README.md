@@ -1,150 +1,122 @@
-# Fault-Tolerant Distributed Institutional Repository
+# YachayRepo
 
-Academic prototype of a distributed repository for academic and administrative
-documents. The project uses FastAPI, Docker, RabbitMQ, replicated storage nodes,
-SQLite metadata, SHA-256 integrity checks, and JSON-based communication.
+YachayRepo es el nombre provisional de un proyecto universitario de Sistemas
+Distribuidos orientado a la gestión documental. Este repositorio reúne el
+prototipo y los experimentos de workshops anteriores, y establece una
+estructura separada para desarrollar progresivamente la aplicación integrada.
 
-> This is a teaching and experimental prototype. Do not upload confidential or
-> real institutional documents.
+> El proyecto es académico y experimental. No se deben cargar documentos
+> institucionales reales, confidenciales o sensibles.
 
-## Project objective
+## Alcance previsto
 
-The project studies how replication and distributed storage can improve document
-availability when storage nodes fail. The proposed system represents the six
-academic schools of Yachay Tech University with six independent storage nodes.
+La arquitectura contemplada para la aplicación definitiva incluye:
 
-The current implementation supports:
+- un frontend web;
+- un backend basado en FastAPI;
+- un servicio centralizado de metadatos;
+- seis nodos lógicos de almacenamiento;
+- contenedores Docker asociados a las escuelas, sin asignar todavía nombres
+  oficiales;
+- replicación con factor de replicación `RF = 3`;
+- detección de fallos en los nodos;
+- recuperación automática de réplicas; y
+- un futuro despliegue distribuido sobre cuatro Raspberry Pi.
 
-- a centralized FastAPI coordinator;
-- six independent storage containers;
-- synchronous replication across three nodes;
-- document versioning and SHA-256 integrity verification;
-- read failover when one replica is unavailable;
-- RabbitMQ fanout events and an audit worker;
-- JSON request and response validation experiments;
-- measurements of message size, latency, processing time, and validation time.
+Estos elementos describen el objetivo de desarrollo. La creación de esta
+estructura no implica que las funcionalidades ya estén implementadas.
 
-Automatic replica repair, authentication, authorization, and production-grade
-metadata fault tolerance remain future work.
-
-## Repository structure
+## Organización del repositorio
 
 ```text
-Project/
-├── README.md
-├── .gitignore
-├── docs/
-│   ├── project-proposal.md
-│   ├── reports/
-│   │   └── workshop7-report.md
-│   └── workshops/
-│       ├── workshop6-description.md
-│       └── workshop7-description.md
-├── prototype/
+Project_Repository/
+├── frontend/
+├── backend/
 │   ├── app/
+│   │   ├── api/
+│   │   ├── models/
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   └── database/
 │   ├── storage/
-│   ├── worker/
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   ├── requirements.txt
-│   └── README.md
-└── experiments/
-    └── json-interchange/
-        ├── coordinator/
-        ├── storage/
-        ├── schemas/
-        ├── experiments/
-        │   └── results/
-        ├── Dockerfile
-        ├── requirements.txt
-        └── README.md
+│   ├── monitoring/
+│   ├── recovery/
+│   └── tests/
+├── infrastructure/
+│   ├── docker/
+│   └── raspberry/
+├── experiments/
+│   └── json-interchange/
+├── prototype/
+├── docs/
+├── .gitignore
+└── README.md
 ```
 
-The PDFs and `repository-workshop.zip` at the repository root are preserved as
-historical academic material. The maintained source code is under `prototype/`
-and `experiments/`.
+### Aplicación definitiva
 
-## Run the distributed prototype
+- `frontend/`: futura interfaz web del sistema.
+- `backend/app/api/`: futuros endpoints y rutas HTTP del backend.
+- `backend/app/models/`: futuros modelos internos y de persistencia.
+- `backend/app/schemas/`: futuros esquemas de validación e intercambio de datos.
+- `backend/app/services/`: futura lógica de aplicación y coordinación.
+- `backend/app/database/`: futura integración con el servicio centralizado de
+  metadatos.
+- `backend/storage/`: futura lógica de los seis nodos lógicos de almacenamiento.
+- `backend/monitoring/`: futura detección y seguimiento de fallos.
+- `backend/recovery/`: futura recuperación automática de réplicas.
+- `backend/tests/`: futuras pruebas automatizadas de la aplicación integrada.
+- `infrastructure/docker/`: futura definición de contenedores y despliegues
+  locales asociados a las escuelas.
+- `infrastructure/raspberry/`: futura documentación y recursos para el
+  despliegue sobre cuatro Raspberry Pi.
+- `docs/`: documentación técnica y académica de la aplicación integrada.
 
-From `prototype/`:
+Las carpetas todavía vacías contienen archivos `.gitkeep` para conservar la
+estructura en Git. En esta etapa no se incluyen dependencias ni configuraciones
+funcionales nuevas.
+
+### Trabajo anterior preservado
+
+- `prototype/`: prototipo distribuido del Workshop 6, con su API, nodos de
+  almacenamiento, worker y configuración Docker existentes.
+- `experiments/json-interchange/`: experimentos del Workshop 7 sobre
+  intercambio y validación de mensajes JSON, incluidas sus mediciones y
+  resultados.
+
+Estas implementaciones se mantienen en sus rutas originales y funcionan como
+referencia histórica. El desarrollo nuevo debe realizarse en `frontend/`,
+`backend/` e `infrastructure/`, evitando mezclarlo con los servicios de los
+workshops.
+
+## Ejecutar el prototipo existente
+
+Desde `prototype/`:
 
 ```bash
 docker compose up --build -d
 docker compose ps
 ```
 
-Available services:
+- API y Swagger: <http://localhost:8000/docs>
+- Administración de RabbitMQ: <http://localhost:15674>
 
-- API and Swagger: <http://localhost:8000/docs>
-- RabbitMQ management: <http://localhost:15674>
-
-Basic checks:
-
-```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/nodes
-docker compose logs worker
-```
-
-See [`prototype/README.md`](prototype/README.md) for the document upload,
-versioning, failover, and event tests.
-
-Stop the environment without deleting its volumes:
+Las instrucciones completas están en
+[`prototype/README.md`](prototype/README.md). Para detener el entorno sin
+eliminar sus volúmenes:
 
 ```bash
 docker compose down
 ```
 
-Do not use `docker compose down -v` unless the local prototype data should be
-deleted deliberately.
+## Ejecutar el experimento JSON existente
 
-## Run the JSON interchange experiment
+El experimento separa un coordinador y un nodo de almacenamiento para comparar
+intercambios con y sin esquemas JSON. Sus instrucciones y resultados están en
+[`experiments/json-interchange/README.md`](experiments/json-interchange/README.md).
 
-The JSON experiment uses two components on different machines or virtual
-machines:
+## Estado actual
 
-```text
-Machine A: coordinator
-Machine B: storage node
-```
-
-It evaluates two services:
-
-1. `POST /schema/files`, with predefined JSON request and response schemas.
-2. `POST /no-schema/files/info`, with manual checks and no predefined schema.
-
-See
-[`experiments/json-interchange/README.md`](experiments/json-interchange/README.md)
-for deployment instructions and measurement commands.
-
-## Documentation
-
-- [Project proposal](docs/project-proposal.md)
-- [Workshop 6 requirements](docs/workshops/workshop6-description.md)
-- [Workshop 7 requirements](docs/workshops/workshop7-description.md)
-- [Workshop 7 report](docs/reports/workshop7-report.md)
-- [JSON experimental results](experiments/json-interchange/experiments/results/)
-
-## Current limitations
-
-- The metadata service is centralized.
-- Automatic restoration of missing replicas is not implemented yet.
-- Replica placement does not yet prioritize the document's academic school.
-- The coordinator is designed for a single API process.
-- External integrations, authentication, upload limits, and persistent retries
-  are outside the current prototype.
-- JSON Base64 transfer is intended for measurement and teaching, not efficient
-  large-file production transfer.
-
-## Suggested development roadmap
-
-1. Consolidate school metadata and school-first replica placement.
-2. Implement periodic node monitoring and persistent failure confirmation.
-3. Add automatic replica recovery when the available replica count falls below
-   the configured replication factor.
-4. Add repeatable fault-injection and recovery tests.
-5. Compare replication factors 1 and 3 using availability, latency, recovery
-   time, and storage overhead.
-6. Introduce authentication and authorization only after the storage and
-   recovery behavior is stable.
-
+La estructura base de la aplicación definitiva está preparada, pero sus
+componentes permanecen vacíos deliberadamente. Las funcionalidades se
+incorporarán de manera progresiva en etapas posteriores.
