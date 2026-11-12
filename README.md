@@ -1,161 +1,186 @@
 # YachayRepo
 
-YachayRepo es el nombre provisional de un proyecto universitario de Sistemas
-Distribuidos orientado a la gestión de documentos académicos y administrativos.
-El objetivo es construir y evaluar progresivamente un repositorio distribuido
-con replicación, detección de fallos y recuperación automática de réplicas.
+YachayRepo es un proyecto académico de Sistemas Distribuidos para construir y
+evaluar un repositorio institucional tolerante a fallos. La Etapa 2 incorpora
+la comunicación básica entre un coordinador FastAPI y seis nodos lógicos de
+almacenamiento, sin implementar todavía gestión de documentos ni replicación.
 
-> El sistema se encuentra en una etapa inicial. La estructura de la aplicación
-> definitiva está preparada, pero todavía no contiene implementaciones
-> funcionales. No se deben almacenar documentos institucionales reales o
-> confidenciales en los prototipos.
+> No se deben almacenar documentos institucionales reales, confidenciales o
+> sensibles en este entorno académico.
 
-## Arquitectura prevista
+## Arquitectura implementada
 
-El diseño del proyecto contempla los siguientes componentes:
+```mermaid
+flowchart TD
+    Client[Cliente] -->|HTTP puerto 8000| Coordinator[Coordinador FastAPI]
+    Coordinator -->|GET /health| Bio[node-bio]
+    Coordinator -->|GET /health| Phy[node-phy]
+    Coordinator -->|GET /health| Math[node-math]
+    Coordinator -->|GET /health| Chem[node-chem]
+    Coordinator -->|GET /health| Earth[node-earth]
+    Coordinator -->|GET /health| Agro[node-agro]
+```
 
-- un frontend web para gestionar y consultar documentos;
-- un backend desarrollado con FastAPI;
-- un servicio centralizado de metadatos;
-- seis nodos lógicos de almacenamiento, asociados a las seis escuelas sin
-  codificar sus nombres en esta etapa;
-- contenedores Docker para representar y aislar los nodos de almacenamiento;
-- replicación de documentos con factor de replicación `RF = 3`;
-- detección de fallos en los nodos de almacenamiento;
-- recuperación automática para restablecer las réplicas perdidas;
-- un futuro despliegue distribuido sobre cuatro Raspberry Pi.
+El **coordinador** es el único punto de acceso publicado al equipo anfitrión.
+Su endpoint `GET /health` informa exclusivamente sobre el propio coordinador;
+`GET /nodes` consulta los seis nodos concurrentemente mediante HTTPX y valida
+la identidad de cada respuesta.
 
-La arquitectura se implementará de manera incremental. La creación de esta
-estructura no implica que todos estos componentes estén disponibles todavía.
+Un **nodo de almacenamiento** es un servicio FastAPI independiente que, en esta
+etapa, solo expone su identidad mediante `GET /health`. Los seis contenedores
+ejecutan exactamente el mismo código. `NODE_ID` y `SCHOOL_NAME` determinan cuál
+escuela representa cada instancia.
 
-## Estructura del repositorio
+| Identificador | Escuela |
+|---|---|
+| `node-bio` | Escuela de Ciencias Biológicas e Ingeniería |
+| `node-phy` | Escuela de Ciencias Físicas y Nanotecnología |
+| `node-math` | Escuela de Ciencias Matemáticas y Computacionales |
+| `node-chem` | Escuela de Ciencias Químicas e Ingeniería |
+| `node-earth` | Escuela de Ciencias de la Tierra, Energía y Ambiente |
+| `node-agro` | Escuela de Ciencias Agropecuarias y Agroindustriales |
+
+Las identidades y URLs están centralizadas en `backend/app/config.py`. Cada URL
+puede sustituirse mediante las variables `NODE_BIO_URL`, `NODE_PHY_URL`,
+`NODE_MATH_URL`, `NODE_CHEM_URL`, `NODE_EARTH_URL` y `NODE_AGRO_URL`. El timeout
+se configura con `NODE_REQUEST_TIMEOUT_SECONDS`.
+
+### Nodos lógicos y físicos
+
+Los seis contenedores son seis **nodos lógicos**, pero al ejecutarse localmente
+comparten un solo equipo físico. En el futuro podrán distribuirse entre cuatro
+Raspberry Pi cambiando sus URLs, sin modificar la lógica del coordinador. Cuando
+se implemente `RF = 3`, la colocación deberá evitar que las tres réplicas de un
+documento dependan del mismo dispositivo físico. Esa regla todavía no está
+implementada.
+
+## Estructura relevante
 
 ```text
 Project_Repository/
-├── frontend/
 ├── backend/
 │   ├── app/
-│   │   ├── api/
-│   │   ├── models/
-│   │   ├── schemas/
-│   │   ├── services/
-│   │   └── database/
+│   │   ├── api/routes.py
+│   │   ├── schemas/nodes.py
+│   │   ├── services/node_health.py
+│   │   ├── config.py
+│   │   └── main.py
 │   ├── storage/
-│   ├── monitoring/
-│   ├── recovery/
-│   └── tests/
+│   │   ├── application.py
+│   │   └── main.py
+│   ├── tests/
+│   ├── requirements.txt
+│   └── requirements-dev.txt
 ├── infrastructure/
 │   ├── docker/
+│   │   ├── compose.yaml
+│   │   ├── Dockerfile.coordinator
+│   │   └── Dockerfile.storage
 │   └── raspberry/
-├── experiments/
-│   └── json-interchange/
+├── frontend/
 ├── prototype/
-├── docs/
-├── .gitignore
-└── README.md
+├── experiments/
+└── docs/
 ```
 
-Los directorios todavía vacíos contienen archivos `.gitkeep` para que Git pueda
-conservar la estructura inicial sin introducir configuraciones o código antes de
-que sean necesarios.
+`prototype/` y `experiments/` conservan intactos los Workshops 6 y 7. La nueva
+implementación no importa ni modifica esos servicios.
 
-## Responsabilidad de cada carpeta
+## Levantar los siete servicios
 
-### `frontend/`
+Requisitos en Ubuntu: Docker Engine con el complemento Docker Compose. Desde la
+raíz del repositorio:
 
-Aplicación web futura para interacción con usuarios, carga, búsqueda y descarga
-de documentos. En esta etapa permanece vacía y no se ha seleccionado ni
-configurado una implementación.
+```bash
+docker compose -f infrastructure/docker/compose.yaml up --build -d
+```
 
-### `backend/`
+El coordinador queda disponible en <http://localhost:8000> y la documentación
+interactiva en <http://localhost:8000/docs>. Los puertos de los nodos no se
+publican; se comunican mediante la red interna creada por Compose.
 
-Aplicación backend definitiva. Su organización inicial separa las siguientes
-responsabilidades:
+Verificar la API:
 
-- `app/api/`: endpoints y rutas HTTP de FastAPI;
-- `app/models/`: modelos internos y entidades del dominio;
-- `app/schemas/`: esquemas de solicitudes y respuestas;
-- `app/services/`: reglas y casos de uso de la aplicación;
-- `app/database/`: acceso al servicio centralizado de metadatos;
-- `storage/`: comunicación y operaciones de los nodos de almacenamiento;
-- `monitoring/`: detección y registro del estado de los nodos;
-- `recovery/`: restauración futura del factor de replicación;
-- `tests/`: pruebas automatizadas del backend y de sus servicios distribuidos.
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/nodes
+```
 
-Estas carpetas definen límites iniciales, no implementaciones ni contratos
-definitivos.
+Consultar contenedores y logs:
 
-### `infrastructure/`
+```bash
+docker compose -f infrastructure/docker/compose.yaml ps
+docker compose -f infrastructure/docker/compose.yaml logs coordinator
+docker compose -f infrastructure/docker/compose.yaml logs node-math
+```
 
-Recursos futuros para desplegar el sistema:
+Detener el sistema sin eliminar sus seis volúmenes:
 
-- `docker/`: imágenes, composición y configuración local de contenedores;
-- `raspberry/`: documentación y recursos para el futuro despliegue sobre cuatro
-  Raspberry Pi.
+```bash
+docker compose -f infrastructure/docker/compose.yaml down
+```
 
-Actualmente no contiene configuración funcional.
+No se debe usar `down -v` durante las pruebas normales porque elimina los
+volúmenes preparados para cada nodo.
 
-### `prototype/`
+## Prueba manual de fallo
 
-Prototipo preservado del Workshop 6. Incluye un coordinador FastAPI, seis nodos
-de almacenamiento simulados mediante Docker, replicación básica, metadatos en
-SQLite y publicación de eventos mediante RabbitMQ.
+1. Levanta el sistema y confirma inicialmente los seis estados:
 
-Este código constituye evidencia y aprendizaje previo. No debe confundirse con
-la implementación definitiva ubicada en `backend/` e `infrastructure/`.
+   ```bash
+   curl http://localhost:8000/nodes
+   ```
 
-Para conocer su alcance y ejecución, consulta
-[`prototype/README.md`](prototype/README.md).
+2. Detén el nodo matemático y vuelve a consultar:
 
-### `experiments/`
+   ```bash
+   docker compose -f infrastructure/docker/compose.yaml stop node-math
+   curl http://localhost:8000/nodes
+   ```
 
-Experimentos preservados del Workshop 7. El directorio
-`experiments/json-interchange/` contiene las pruebas de intercambio de datos
-JSON con y sin esquemas predefinidos, además de mediciones de tamaño, latencia y
-sobrecarga de procesamiento.
+   `node-math` debe aparecer como `unavailable`; los otros cinco deben continuar
+   como `healthy`.
 
-Para reproducirlos, consulta
-[`experiments/json-interchange/README.md`](experiments/json-interchange/README.md).
+3. Inicia el nodo y verifica su recuperación:
 
-### `docs/`
+   ```bash
+   docker compose -f infrastructure/docker/compose.yaml start node-math
+   curl http://localhost:8000/nodes
+   ```
 
-Documentación futura de arquitectura, decisiones técnicas, despliegue,
-experimentos y evaluación del proyecto. En esta etapa solo se conserva el
-directorio para organizar documentación posterior.
+## Pruebas automatizadas
 
-## Estado actual
+Usando el entorno virtual creado en la raíz:
 
-| Área | Estado |
-|---|---|
-| Prototipo del Workshop 6 | Preservado |
-| Experimentos del Workshop 7 | Preservados |
-| Estructura de la aplicación definitiva | Preparada |
-| Frontend definitivo | No implementado |
-| Backend definitivo | No implementado |
-| Servicio definitivo de metadatos | No implementado |
-| Detección definitiva de fallos | No implementada |
-| Recuperación automática de réplicas | No implementada |
-| Despliegue sobre Raspberry Pi | Planificado |
+```bash
+source .venv/bin/activate
+python -m pip install -r backend/requirements-dev.txt
+python -m pytest backend/tests
+```
 
-## Principios para el desarrollo
+Las pruebas no requieren Docker ni Raspberry Pi. Utilizan el transporte de
+prueba de HTTPX para simular respuestas correctas, conexiones fallidas,
+timeouts, HTTP 500, JSON inválido e identidades incorrectas. También verifican
+que las seis consultas se inicien concurrentemente.
 
-- Implementar cambios pequeños y verificables.
-- Mantener separados el código definitivo, los prototipos y los experimentos.
-- No modificar retrospectivamente los workshops para adaptarlos a la nueva
-  arquitectura.
-- Documentar las decisiones antes de introducir infraestructura compleja.
-- Evitar datos sensibles, credenciales y conexiones a entornos de producción.
-- Agregar dependencias y configuraciones únicamente cuando una funcionalidad
-  concreta las requiera.
+## Comportamiento actual
 
-## Próximos pasos posibles
+- `GET /health` del coordinador responde aunque todos los nodos estén caídos.
+- `GET /nodes` siempre conserva los seis nodos y el orden configurado.
+- Un nodo solo se clasifica como `healthy` si devuelve HTTP satisfactorio, JSON
+  válido, `status=ok`, `service=storage` y el identificador esperado.
+- Cada nodo posee un volumen Docker independiente montado en `/data`.
+- Las imágenes se basan en Python `slim`, sin dependencias específicas de x86 ni
+  una plataforma `linux/amd64` forzada, para permitir builds ARM64 posteriores.
 
-1. Definir los primeros requisitos funcionales de la aplicación integrada.
-2. Documentar las responsabilidades y contratos entre componentes.
-3. Diseñar el modelo inicial del servicio de metadatos.
-4. Definir el contrato entre el coordinador y los nodos de almacenamiento.
-5. Preparar pruebas locales antes de introducir el despliegue físico.
-6. Diseñar posteriormente la distribución sobre cuatro Raspberry Pi.
+## Funcionalidades todavía no implementadas
 
-Estos pasos son orientativos y no representan funcionalidades implementadas en
-la organización inicial del repositorio.
+Esta etapa no incluye frontend, PostgreSQL, metadatos persistentes, subida o
+descarga de documentos, versionamiento, replicación, RabbitMQ, monitoreo
+periódico, recuperación automática, autenticación, autorización, cifrado,
+balanceo de carga ni despliegue físico sobre Raspberry Pi.
+
+La siguiente etapa deberá definir primero el modelo de documentos y metadatos,
+incorporar PostgreSQL al coordinador y diseñar el contrato para guardar archivos
+en los nodos. La replicación debe añadirse después de que ese flujo básico sea
+verificable.
