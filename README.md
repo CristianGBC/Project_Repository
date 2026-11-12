@@ -1,10 +1,9 @@
 # YachayRepo
 
 YachayRepo es un proyecto académico de Sistemas Distribuidos para construir y
-evaluar un repositorio institucional tolerante a fallos. La Etapa 2.1 permite
-ejecutar el coordinador FastAPI y los seis nodos lógicos de almacenamiento en
-dos computadoras Ubuntu, sin implementar todavía gestión documental ni
-replicación.
+evaluar un repositorio institucional tolerante a fallos. La Etapa 3 permite
+cargar, consultar y descargar documentos mediante el coordinador y los seis
+nodos institucionales distribuidos entre dos computadoras Ubuntu.
 
 > No se deben almacenar documentos institucionales reales, confidenciales o
 > sensibles en este entorno académico.
@@ -28,9 +27,9 @@ Su endpoint `GET /health` informa exclusivamente sobre el propio coordinador;
 la identidad de cada respuesta.
 
 Un **nodo de almacenamiento** es un servicio FastAPI independiente que, en esta
-etapa, solo expone su identidad mediante `GET /health`. Los seis contenedores
-ejecutan exactamente el mismo código. `NODE_ID` y `SCHOOL_NAME` determinan cuál
-escuela representa cada instancia.
+etapa, conserva documentos y metadatos JSON dentro de su volumen. Los seis
+contenedores ejecutan exactamente el mismo código. `NODE_ID` y `SCHOOL_NAME`
+determinan cuál escuela representa cada instancia.
 
 | Identificador | Escuela |
 |---|---|
@@ -83,6 +82,7 @@ Project_Repository/
 ├── prototype/
 ├── experiments/
 └── docs/
+    ├── document-storage.md
     └── two-host-deployment.md
 ```
 
@@ -112,6 +112,30 @@ Para el despliegue distribuido, Host B publica los nodos en los puertos
 completa y los comandos separados para ambos equipos están en
 [`docs/two-host-deployment.md`](docs/two-host-deployment.md).
 
+La arquitectura documental, endpoints, persistencia e integridad se detallan en
+[`docs/document-storage.md`](docs/document-storage.md).
+
+## Operaciones documentales
+
+Cargar un archivo en la escuela matemática:
+
+```bash
+curl -X POST http://localhost:8000/documents \
+  -F 'school_id=node-math' \
+  -F 'file=@./documento.pdf'
+```
+
+Consultar y descargar usando el UUID devuelto:
+
+```bash
+curl http://localhost:8000/documents/node-math/DOCUMENT_ID
+curl -OJ http://localhost:8000/documents/node-math/DOCUMENT_ID/download
+```
+
+El coordinador y el nodo calculan SHA-256 de forma independiente. Antes de cada
+descarga, ambos vuelven a verificar el contenido. El factor temporal es RF = 1:
+cada documento existe únicamente en el nodo asociado a su escuela.
+
 Verificar la API:
 
 ```bash
@@ -130,7 +154,8 @@ docker compose -f infrastructure/docker/compose.yaml logs node-math
 Detener el sistema sin eliminar sus seis volúmenes:
 
 ```bash
-docker compose -f infrastructure/docker/compose.yaml down
+docker compose -f infrastructure/docker/compose.yaml \
+  --profile coordinator --profile storage down
 ```
 
 No se debe usar `down -v` durante las pruebas normales porque elimina los
@@ -192,12 +217,11 @@ que las seis consultas se inicien concurrentemente.
 
 ## Funcionalidades todavía no implementadas
 
-Esta etapa no incluye frontend, PostgreSQL, metadatos persistentes, subida o
-descarga de documentos, versionamiento, replicación, RabbitMQ, monitoreo
-periódico, recuperación automática, autenticación, autorización, cifrado,
-balanceo de carga ni despliegue físico sobre Raspberry Pi.
+Esta etapa no incluye frontend, PostgreSQL, catálogo central de metadatos,
+versionamiento, replicación, RabbitMQ, monitoreo periódico, recuperación
+automática, autenticación, autorización, cifrado, balanceo de carga ni
+despliegue físico sobre Raspberry Pi.
 
-La siguiente etapa deberá definir primero el modelo de documentos y metadatos,
-incorporar PostgreSQL al coordinador y diseñar el contrato para guardar archivos
-en los nodos. La replicación debe añadirse después de que ese flujo básico sea
-verificable.
+La siguiente etapa deberá incorporar PostgreSQL como catálogo central sin mover
+los archivos fuera de sus nodos. Después de estabilizar ese catálogo podrá
+ampliarse el flujo actual a replicación RF = 3 y recuperación de copias.

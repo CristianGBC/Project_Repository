@@ -19,6 +19,8 @@ class CoordinatorSettings:
 
     nodes: tuple[NodeSettings, ...]
     request_timeout_seconds: float
+    transfer_timeout_seconds: float
+    max_upload_size_bytes: int
 
 
 NODE_IDENTITIES: tuple[tuple[str, str, str], ...] = (
@@ -69,4 +71,15 @@ def load_settings() -> CoordinatorSettings:
     timeout = float(os.getenv("NODE_REQUEST_TIMEOUT_SECONDS", "2.0"))
     if timeout <= 0:
         raise ValueError("NODE_REQUEST_TIMEOUT_SECONDS must be greater than zero")
-    return CoordinatorSettings(nodes=nodes, request_timeout_seconds=timeout)
+    transfer_timeout = float(os.getenv("DOCUMENT_TRANSFER_TIMEOUT_SECONDS", "30.0"))
+    if transfer_timeout <= 0:
+        raise ValueError("DOCUMENT_TRANSFER_TIMEOUT_SECONDS must be greater than zero")
+    max_upload_mb = float(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
+    if max_upload_mb <= 0:
+        raise ValueError("MAX_UPLOAD_SIZE_MB must be greater than zero")
+    return CoordinatorSettings(
+        nodes=nodes,
+        request_timeout_seconds=timeout,
+        transfer_timeout_seconds=transfer_timeout,
+        max_upload_size_bytes=int(max_upload_mb * 1024 * 1024),
+    )

@@ -15,7 +15,12 @@ MockHandler = Callable[
 ]
 
 
-def asgi_get(application: FastAPI, path: str) -> httpx.Response:
+def asgi_request(
+    application: FastAPI,
+    method: str,
+    path: str,
+    **kwargs,
+) -> httpx.Response:
     """Issue one request to an ASGI application without opening a real socket."""
 
     async def request() -> httpx.Response:
@@ -24,15 +29,21 @@ def asgi_get(application: FastAPI, path: str) -> httpx.Response:
             transport=transport,
             base_url="http://testserver",
         ) as client:
-            return await client.get(path)
+            return await client.request(method, path, **kwargs)
 
     return asyncio.run(request())
+
+
+def asgi_get(application: FastAPI, path: str) -> httpx.Response:
+    return asgi_request(application, "GET", path)
 
 
 def coordinator_request(
     handler: MockHandler,
     path: str,
     settings: CoordinatorSettings | None = None,
+    method: str = "GET",
+    **kwargs,
 ) -> httpx.Response:
     """Run one coordinator request with an isolated outgoing transport."""
 
@@ -50,6 +61,6 @@ def coordinator_request(
                     transport=transport,
                     base_url="http://testserver",
                 ) as client:
-                    return await client.get(path)
+                    return await client.request(method, path, **kwargs)
 
     return asyncio.run(request())

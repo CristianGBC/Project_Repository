@@ -26,6 +26,9 @@ async def nodes_health(request: Request) -> NodesResponse:
     client: httpx.AsyncClient = request.app.state.http_client
     settings: CoordinatorSettings = request.app.state.settings
     statuses = await asyncio.gather(
-        *(check_node(client, node) for node in settings.nodes)
+        *(
+            check_node(client, node, settings.request_timeout_seconds)
+            for node in settings.nodes
+        )
     )
     return NodesResponse(nodes=list(statuses))

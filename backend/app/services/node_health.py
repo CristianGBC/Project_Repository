@@ -21,12 +21,16 @@ def _is_valid_health_payload(payload: Any, expected_node_id: str) -> bool:
 async def check_node(
     client: httpx.AsyncClient,
     node: NodeSettings,
+    timeout_seconds: float | None = None,
 ) -> NodeStatus:
     """Return a stable status even when a node fails or answers incorrectly."""
 
     status = "unavailable"
     try:
-        response = await client.get(f"{node.url}/health")
+        response = await client.get(
+            f"{node.url}/health",
+            timeout=timeout_seconds,
+        )
         response.raise_for_status()
         payload = response.json()
         if _is_valid_health_payload(payload, node.node_id):

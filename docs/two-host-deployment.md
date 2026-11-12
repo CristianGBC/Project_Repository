@@ -201,3 +201,27 @@ normales.
 Esta configuración no modifica Wi-Fi, firewall ni equipos remotos. Cualquier
 cambio de red debe realizarse y validarse manualmente por los responsables del
 laboratorio.
+
+## Operaciones documentales de la Etapa 3
+
+Con el perfil `storage` activo en Host B y el perfil `coordinator` activo en
+Host A, Swagger UI permite cargar, consultar y descargar documentos mediante el
+coordinador:
+
+```text
+http://localhost:8000/docs
+```
+
+Prueba desde Host A:
+
+```bash
+curl -X POST http://localhost:8000/documents \
+  -F 'school_id=node-math' \
+  -F 'file=@./documento.pdf'
+```
+
+El archivo queda en el volumen de `node-math`. Reiniciar ese contenedor conserva
+el contenido; detenerlo hace que el coordinador devuelva `503` para sus
+documentos sin afectar los otros nodos. La arquitectura, endpoints, integridad
+y limitaciones de RF = 1 se explican en
+[`document-storage.md`](document-storage.md).
