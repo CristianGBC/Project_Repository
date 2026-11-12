@@ -1,0 +1,98 @@
+x-storage-common: &storage-common
+  build:
+    context: ../..
+    dockerfile: infrastructure/docker/Dockerfile.storage
+  restart: unless-stopped
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"
+    interval: 10s
+    timeout: 3s
+    retries: 3
+    start_period: 5s
+
+services:
+  coordinator:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.coordinator
+    restart: unless-stopped
+    environment:
+      NODE_BIO_URL: http://node-bio:8000
+      NODE_PHY_URL: http://node-phy:8000
+      NODE_MATH_URL: http://node-math:8000
+      NODE_CHEM_URL: http://node-chem:8000
+      NODE_EARTH_URL: http://node-earth:8000
+      NODE_AGRO_URL: http://node-agro:8000
+      NODE_REQUEST_TIMEOUT_SECONDS: "2.0"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  node-bio:
+    <<: *storage-common
+    environment:
+      NODE_ID: node-bio
+      SCHOOL_NAME: Escuela de Ciencias Biológicas e Ingeniería
+    volumes:
+      - storage_bio:/data
+
+  node-phy:
+    <<: *storage-common
+    environment:
+      NODE_ID: node-phy
+      SCHOOL_NAME: Escuela de Ciencias Físicas y Nanotecnología
+    volumes:
+      - storage_phy:/data
+
+  node-math:
+    <<: *storage-common
+    environment:
+      NODE_ID: node-math
+      SCHOOL_NAME: Escuela de Ciencias Matemáticas y Computacionales
+    volumes:
+      - storage_math:/data
+
+  node-chem:
+    <<: *storage-common
+    environment:
+      NODE_ID: node-chem
+      SCHOOL_NAME: Escuela de Ciencias Químicas e Ingeniería
+    volumes:
+      - storage_chem:/data
+
+  node-earth:
+    <<: *storage-common
+    environment:
+      NODE_ID: node-earth
+      SCHOOL_NAME: Escuela de Ciencias de la Tierra, Energía y Ambiente
+    volumes:
+      - storage_earth:/data
+
+  node-agro:
+    <<: *storage-common
+    environment:
+      NODE_ID: node-agro
+      SCHOOL_NAME: Escuela de Ciencias Agropecuarias y Agroindustriales
+    volumes:
+      - storage_agro:/data
+
+volumes:
+  storage_bio:
+  storage_phy:
+  storage_math:
+  storage_chem:
+  storage_earth:
+  storage_agro:
