@@ -1,7 +1,10 @@
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 .venv/
@@ -35,9 +38,8 @@ build/
 *.log
 *.tmp
 
-# External papers and obsolete source archive (kept locally, not published)
+# External papers and obsolete source archive
 /1-s2.0-S2543925122000717-main.pdf
 /978-3-642-04346-8_61.pdf
 /Towards-an-ontologybased-distributed-architecture-for-paid-content_2005_Springer-Verlag.pdf
 /repository-workshop.zip
-
