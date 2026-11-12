@@ -1,150 +1,161 @@
-# Fault-Tolerant Distributed Institutional Repository
+# YachayRepo
 
-Academic prototype of a distributed repository for academic and administrative
-documents. The project uses FastAPI, Docker, RabbitMQ, replicated storage nodes,
-SQLite metadata, SHA-256 integrity checks, and JSON-based communication.
+YachayRepo es el nombre provisional de un proyecto universitario de Sistemas
+Distribuidos orientado a la gestión de documentos académicos y administrativos.
+El objetivo es construir y evaluar progresivamente un repositorio distribuido
+con replicación, detección de fallos y recuperación automática de réplicas.
 
-> This is a teaching and experimental prototype. Do not upload confidential or
-> real institutional documents.
+> El sistema se encuentra en una etapa inicial. La estructura de la aplicación
+> definitiva está preparada, pero todavía no contiene implementaciones
+> funcionales. No se deben almacenar documentos institucionales reales o
+> confidenciales en los prototipos.
 
-## Project objective
+## Arquitectura prevista
 
-The project studies how replication and distributed storage can improve document
-availability when storage nodes fail. The proposed system represents the six
-academic schools of Yachay Tech University with six independent storage nodes.
+El diseño del proyecto contempla los siguientes componentes:
 
-The current implementation supports:
+- un frontend web para gestionar y consultar documentos;
+- un backend desarrollado con FastAPI;
+- un servicio centralizado de metadatos;
+- seis nodos lógicos de almacenamiento, asociados a las seis escuelas sin
+  codificar sus nombres en esta etapa;
+- contenedores Docker para representar y aislar los nodos de almacenamiento;
+- replicación de documentos con factor de replicación `RF = 3`;
+- detección de fallos en los nodos de almacenamiento;
+- recuperación automática para restablecer las réplicas perdidas;
+- un futuro despliegue distribuido sobre cuatro Raspberry Pi.
 
-- a centralized FastAPI coordinator;
-- six independent storage containers;
-- synchronous replication across three nodes;
-- document versioning and SHA-256 integrity verification;
-- read failover when one replica is unavailable;
-- RabbitMQ fanout events and an audit worker;
-- JSON request and response validation experiments;
-- measurements of message size, latency, processing time, and validation time.
+La arquitectura se implementará de manera incremental. La creación de esta
+estructura no implica que todos estos componentes estén disponibles todavía.
 
-Automatic replica repair, authentication, authorization, and production-grade
-metadata fault tolerance remain future work.
-
-## Repository structure
+## Estructura del repositorio
 
 ```text
-Project/
-├── README.md
-├── .gitignore
-├── docs/
-│   ├── project-proposal.md
-│   ├── reports/
-│   │   └── workshop7-report.md
-│   └── workshops/
-│       ├── workshop6-description.md
-│       └── workshop7-description.md
-├── prototype/
+Project_Repository/
+├── frontend/
+├── backend/
 │   ├── app/
+│   │   ├── api/
+│   │   ├── models/
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   └── database/
 │   ├── storage/
-│   ├── worker/
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   ├── requirements.txt
-│   └── README.md
-└── experiments/
-    └── json-interchange/
-        ├── coordinator/
-        ├── storage/
-        ├── schemas/
-        ├── experiments/
-        │   └── results/
-        ├── Dockerfile
-        ├── requirements.txt
-        └── README.md
+│   ├── monitoring/
+│   ├── recovery/
+│   └── tests/
+├── infrastructure/
+│   ├── docker/
+│   └── raspberry/
+├── experiments/
+│   └── json-interchange/
+├── prototype/
+├── docs/
+├── .gitignore
+└── README.md
 ```
 
-The PDFs and `repository-workshop.zip` at the repository root are preserved as
-historical academic material. The maintained source code is under `prototype/`
-and `experiments/`.
+Los directorios todavía vacíos contienen archivos `.gitkeep` para que Git pueda
+conservar la estructura inicial sin introducir configuraciones o código antes de
+que sean necesarios.
 
-## Run the distributed prototype
+## Responsabilidad de cada carpeta
 
-From `prototype/`:
+### `frontend/`
 
-```bash
-docker compose up --build -d
-docker compose ps
-```
+Aplicación web futura para interacción con usuarios, carga, búsqueda y descarga
+de documentos. En esta etapa permanece vacía y no se ha seleccionado ni
+configurado una implementación.
 
-Available services:
+### `backend/`
 
-- API and Swagger: <http://localhost:8000/docs>
-- RabbitMQ management: <http://localhost:15674>
+Aplicación backend definitiva. Su organización inicial separa las siguientes
+responsabilidades:
 
-Basic checks:
+- `app/api/`: endpoints y rutas HTTP de FastAPI;
+- `app/models/`: modelos internos y entidades del dominio;
+- `app/schemas/`: esquemas de solicitudes y respuestas;
+- `app/services/`: reglas y casos de uso de la aplicación;
+- `app/database/`: acceso al servicio centralizado de metadatos;
+- `storage/`: comunicación y operaciones de los nodos de almacenamiento;
+- `monitoring/`: detección y registro del estado de los nodos;
+- `recovery/`: restauración futura del factor de replicación;
+- `tests/`: pruebas automatizadas del backend y de sus servicios distribuidos.
 
-```bash
-curl http://localhost:8000/health
-curl http://localhost:8000/nodes
-docker compose logs worker
-```
+Estas carpetas definen límites iniciales, no implementaciones ni contratos
+definitivos.
 
-See [`prototype/README.md`](prototype/README.md) for the document upload,
-versioning, failover, and event tests.
+### `infrastructure/`
 
-Stop the environment without deleting its volumes:
+Recursos futuros para desplegar el sistema:
 
-```bash
-docker compose down
-```
+- `docker/`: imágenes, composición y configuración local de contenedores;
+- `raspberry/`: documentación y recursos para el futuro despliegue sobre cuatro
+  Raspberry Pi.
 
-Do not use `docker compose down -v` unless the local prototype data should be
-deleted deliberately.
+Actualmente no contiene configuración funcional.
 
-## Run the JSON interchange experiment
+### `prototype/`
 
-The JSON experiment uses two components on different machines or virtual
-machines:
+Prototipo preservado del Workshop 6. Incluye un coordinador FastAPI, seis nodos
+de almacenamiento simulados mediante Docker, replicación básica, metadatos en
+SQLite y publicación de eventos mediante RabbitMQ.
 
-```text
-Machine A: coordinator
-Machine B: storage node
-```
+Este código constituye evidencia y aprendizaje previo. No debe confundirse con
+la implementación definitiva ubicada en `backend/` e `infrastructure/`.
 
-It evaluates two services:
+Para conocer su alcance y ejecución, consulta
+[`prototype/README.md`](prototype/README.md).
 
-1. `POST /schema/files`, with predefined JSON request and response schemas.
-2. `POST /no-schema/files/info`, with manual checks and no predefined schema.
+### `experiments/`
 
-See
-[`experiments/json-interchange/README.md`](experiments/json-interchange/README.md)
-for deployment instructions and measurement commands.
+Experimentos preservados del Workshop 7. El directorio
+`experiments/json-interchange/` contiene las pruebas de intercambio de datos
+JSON con y sin esquemas predefinidos, además de mediciones de tamaño, latencia y
+sobrecarga de procesamiento.
 
-## Documentation
+Para reproducirlos, consulta
+[`experiments/json-interchange/README.md`](experiments/json-interchange/README.md).
 
-- [Project proposal](docs/project-proposal.md)
-- [Workshop 6 requirements](docs/workshops/workshop6-description.md)
-- [Workshop 7 requirements](docs/workshops/workshop7-description.md)
-- [Workshop 7 report](docs/reports/workshop7-report.md)
-- [JSON experimental results](experiments/json-interchange/experiments/results/)
+### `docs/`
 
-## Current limitations
+Documentación futura de arquitectura, decisiones técnicas, despliegue,
+experimentos y evaluación del proyecto. En esta etapa solo se conserva el
+directorio para organizar documentación posterior.
 
-- The metadata service is centralized.
-- Automatic restoration of missing replicas is not implemented yet.
-- Replica placement does not yet prioritize the document's academic school.
-- The coordinator is designed for a single API process.
-- External integrations, authentication, upload limits, and persistent retries
-  are outside the current prototype.
-- JSON Base64 transfer is intended for measurement and teaching, not efficient
-  large-file production transfer.
+## Estado actual
 
-## Suggested development roadmap
+| Área | Estado |
+|---|---|
+| Prototipo del Workshop 6 | Preservado |
+| Experimentos del Workshop 7 | Preservados |
+| Estructura de la aplicación definitiva | Preparada |
+| Frontend definitivo | No implementado |
+| Backend definitivo | No implementado |
+| Servicio definitivo de metadatos | No implementado |
+| Detección definitiva de fallos | No implementada |
+| Recuperación automática de réplicas | No implementada |
+| Despliegue sobre Raspberry Pi | Planificado |
 
-1. Consolidate school metadata and school-first replica placement.
-2. Implement periodic node monitoring and persistent failure confirmation.
-3. Add automatic replica recovery when the available replica count falls below
-   the configured replication factor.
-4. Add repeatable fault-injection and recovery tests.
-5. Compare replication factors 1 and 3 using availability, latency, recovery
-   time, and storage overhead.
-6. Introduce authentication and authorization only after the storage and
-   recovery behavior is stable.
+## Principios para el desarrollo
 
+- Implementar cambios pequeños y verificables.
+- Mantener separados el código definitivo, los prototipos y los experimentos.
+- No modificar retrospectivamente los workshops para adaptarlos a la nueva
+  arquitectura.
+- Documentar las decisiones antes de introducir infraestructura compleja.
+- Evitar datos sensibles, credenciales y conexiones a entornos de producción.
+- Agregar dependencias y configuraciones únicamente cuando una funcionalidad
+  concreta las requiera.
+
+## Próximos pasos posibles
+
+1. Definir los primeros requisitos funcionales de la aplicación integrada.
+2. Documentar las responsabilidades y contratos entre componentes.
+3. Diseñar el modelo inicial del servicio de metadatos.
+4. Definir el contrato entre el coordinador y los nodos de almacenamiento.
+5. Preparar pruebas locales antes de introducir el despliegue físico.
+6. Diseñar posteriormente la distribución sobre cuatro Raspberry Pi.
+
+Estos pasos son orientativos y no representan funcionalidades implementadas en
+la organización inicial del repositorio.
