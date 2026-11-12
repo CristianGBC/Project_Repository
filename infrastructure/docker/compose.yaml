@@ -1,4 +1,6 @@
 x-storage-common: &storage-common
+  profiles:
+    - storage
   build:
     context: ../..
     dockerfile: infrastructure/docker/Dockerfile.storage
@@ -16,18 +18,20 @@ x-storage-common: &storage-common
 
 services:
   coordinator:
+    profiles:
+      - coordinator
     build:
       context: ../..
       dockerfile: infrastructure/docker/Dockerfile.coordinator
     restart: unless-stopped
     environment:
-      NODE_BIO_URL: http://node-bio:8000
-      NODE_PHY_URL: http://node-phy:8000
-      NODE_MATH_URL: http://node-math:8000
-      NODE_CHEM_URL: http://node-chem:8000
-      NODE_EARTH_URL: http://node-earth:8000
-      NODE_AGRO_URL: http://node-agro:8000
-      NODE_REQUEST_TIMEOUT_SECONDS: "2.0"
+      NODE_BIO_URL: ${NODE_BIO_URL:-http://node-bio:8000}
+      NODE_PHY_URL: ${NODE_PHY_URL:-http://node-phy:8000}
+      NODE_MATH_URL: ${NODE_MATH_URL:-http://node-math:8000}
+      NODE_CHEM_URL: ${NODE_CHEM_URL:-http://node-chem:8000}
+      NODE_EARTH_URL: ${NODE_EARTH_URL:-http://node-earth:8000}
+      NODE_AGRO_URL: ${NODE_AGRO_URL:-http://node-agro:8000}
+      NODE_REQUEST_TIMEOUT_SECONDS: ${NODE_REQUEST_TIMEOUT_SECONDS:-2.0}
     ports:
       - "8000:8000"
     healthcheck:
@@ -48,6 +52,8 @@ services:
       SCHOOL_NAME: Escuela de Ciencias Biológicas e Ingeniería
     volumes:
       - storage_bio:/data
+    ports:
+      - "8001:8000"
 
   node-phy:
     <<: *storage-common
@@ -56,6 +62,8 @@ services:
       SCHOOL_NAME: Escuela de Ciencias Físicas y Nanotecnología
     volumes:
       - storage_phy:/data
+    ports:
+      - "8002:8000"
 
   node-math:
     <<: *storage-common
@@ -64,6 +72,8 @@ services:
       SCHOOL_NAME: Escuela de Ciencias Matemáticas y Computacionales
     volumes:
       - storage_math:/data
+    ports:
+      - "8003:8000"
 
   node-chem:
     <<: *storage-common
@@ -72,6 +82,8 @@ services:
       SCHOOL_NAME: Escuela de Ciencias Químicas e Ingeniería
     volumes:
       - storage_chem:/data
+    ports:
+      - "8004:8000"
 
   node-earth:
     <<: *storage-common
@@ -80,6 +92,8 @@ services:
       SCHOOL_NAME: Escuela de Ciencias de la Tierra, Energía y Ambiente
     volumes:
       - storage_earth:/data
+    ports:
+      - "8005:8000"
 
   node-agro:
     <<: *storage-common
@@ -88,6 +102,8 @@ services:
       SCHOOL_NAME: Escuela de Ciencias Agropecuarias y Agroindustriales
     volumes:
       - storage_agro:/data
+    ports:
+      - "8006:8000"
 
 volumes:
   storage_bio:
