@@ -1,0 +1,60 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "15674:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      RABBIT_HOST: rabbitmq
+      NODES: node1,node2,node3,node4,node5,node6
+      DB_PATH: /data/metadata.sqlite3
+    volumes:
+      - metadata:/data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+  worker:
+    build: .
+    command: python -m worker.events
+    environment:
+      RABBIT_HOST: rabbitmq
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+  node1: &node
+    build: .
+    command: uvicorn storage.main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - node1_data:/data
+  node2:
+    <<: *node
+    volumes: [node2_data:/data]
+  node3:
+    <<: *node
+    volumes: [node3_data:/data]
+  node4:
+    <<: *node
+    volumes: [node4_data:/data]
+  node5:
+    <<: *node
+    volumes: [node5_data:/data]
+  node6:
+    <<: *node
+    volumes: [node6_data:/data]
+volumes:
+  metadata:
+  node1_data:
+  node2_data:
+  node3_data:
+  node4_data:
+  node5_data:
+  node6_data:

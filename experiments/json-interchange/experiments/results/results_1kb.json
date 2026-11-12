@@ -1,0 +1,59 @@
+{
+  "file": "test-1kb.bin",
+  "original_file_bytes": 1024,
+  "repetitions": 20,
+  "with_json_schema": {
+    "request_body_bytes": 1552,
+    "response_body_bytes_mean": {
+      "mean": 280.9,
+      "minimum": 279,
+      "maximum": 282,
+      "standard_deviation": 0.9119095061289915
+    },
+    "latency_ms": {
+      "mean": 7.197845149948989,
+      "minimum": 6.246585999178933,
+      "maximum": 9.861426000497886,
+      "standard_deviation": 0.9682369965568953
+    },
+    "client_validation_ms": {
+      "mean": 0.17689665000943933,
+      "minimum": 0.13351000052352902,
+      "maximum": 0.24659300106577575,
+      "standard_deviation": 0.029291296949214393
+    },
+    "server_validation_ms": {
+      "mean": 0.11732864968507783,
+      "minimum": 0.09574000068823807,
+      "maximum": 0.16745399989304133,
+      "standard_deviation": 0.01680327138027267
+    },
+    "server_processing_ms": {
+      "mean": 0.4209601998809376,
+      "minimum": 0.3074369997193571,
+      "maximum": 1.4851349988020957,
+      "standard_deviation": 0.25336567718762687
+    }
+  },
+  "without_predefined_schema": {
+    "request_body_bytes": 62,
+    "response_body_bytes_mean": {
+      "mean": 239.4,
+      "minimum": 237,
+      "maximum": 240,
+      "standard_deviation": 0.8207826816681233
+    },
+    "latency_ms": {
+      "mean": 7.727288650039554,
+      "minimum": 6.98255700081063,
+      "maximum": 10.22583999838389,
+      "standard_deviation": 0.8080237980606514
+    },
+    "server_processing_ms": {
+      "mean": 1.465466199988441,
+      "minimum": 1.1290380025457125,
+      "maximum": 3.10476300001028,
+      "standard_deviation": 0.42505590097797163
+    }
+  }
+}

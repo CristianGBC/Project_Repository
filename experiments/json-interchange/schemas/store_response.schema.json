@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StoreDocumentResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "stored",
+    "document_id",
+    "version",
+    "sha256",
+    "node",
+    "size_bytes",
+    "processing_time_ms",
+    "validation_time_ms"
+  ],
+  "properties": {
+    "stored": { "const": true },
+    "document_id": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "node": { "type": "string", "minLength": 1 },
+    "size_bytes": { "type": "integer", "minimum": 0 },
+    "processing_time_ms": { "type": "number", "minimum": 0 },
+    "validation_time_ms": { "type": "number", "minimum": 0 }
+  }
+}
