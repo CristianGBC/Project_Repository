@@ -1,28 +1,45 @@
-# Entornos virtuales de Python
-.venv/
-venv/
-
-# Archivos generados por Python
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
 
-# Variables de entorno y secretos locales
+# Environment and secrets
 .env
 .env.*
 !.env.example
 
-# Editores y sistema operativo
+# Editors and operating systems
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
 
-# Cobertura y artefactos de compilacion
-.coverage
-htmlcov/
+# Runtime data
+*.sqlite
+*.sqlite3
+data/
+volumes/
+
+# Generated test documents and local measurement output
+test-*.bin
+prueba.txt
+results-*.json
+
+# Build and temporary artifacts
 dist/
 build/
+*.log
+*.tmp
+
+# External papers and obsolete source archive
+/1-s2.0-S2543925122000717-main.pdf
+/978-3-642-04346-8_61.pdf
+/Towards-an-ontologybased-distributed-architecture-for-paid-content_2005_Springer-Verlag.pdf
+/repository-workshop.zip
