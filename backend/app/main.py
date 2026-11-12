@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import httpx
 
-from backend.app.api import router
+from backend.app.api import documents_router, router
 from backend.app.config import CoordinatorSettings, load_settings
 
 
@@ -23,7 +23,7 @@ def create_app(
         owns_client = http_client is None
         application.state.settings = coordinator_settings
         application.state.http_client = http_client or httpx.AsyncClient(
-            timeout=coordinator_settings.request_timeout_seconds
+            timeout=coordinator_settings.transfer_timeout_seconds
         )
         try:
             yield
@@ -37,6 +37,7 @@ def create_app(
         lifespan=lifespan,
     )
     application.include_router(router)
+    application.include_router(documents_router)
     return application
 
 
