@@ -21,6 +21,7 @@ class CoordinatorSettings:
     request_timeout_seconds: float
     transfer_timeout_seconds: float
     max_upload_size_bytes: int
+    database_url: str | None = None
 
 
 NODE_IDENTITIES: tuple[tuple[str, str, str], ...] = (
@@ -82,4 +83,5 @@ def load_settings() -> CoordinatorSettings:
         request_timeout_seconds=timeout,
         transfer_timeout_seconds=transfer_timeout,
         max_upload_size_bytes=int(max_upload_mb * 1024 * 1024),
+        database_url=os.getenv("DATABASE_URL"),
     )

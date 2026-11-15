@@ -42,3 +42,16 @@ def test_all_node_urls_support_remote_host_configuration(monkeypatch) -> None:
     settings = load_settings()
 
     assert [node.url for node in settings.nodes] == list(remote_urls.values())
+
+
+def test_database_url_is_loaded_only_from_environment(monkeypatch) -> None:
+    database_url = "postgresql+psycopg://app:secret@db.example/yachayrepo_test"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    assert load_settings().database_url == database_url
+
+
+def test_database_url_has_no_implicit_default(monkeypatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    assert load_settings().database_url is None
