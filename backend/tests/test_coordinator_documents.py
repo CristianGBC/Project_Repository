@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID
 
 import httpx
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.config import load_settings
 from backend.tests.conftest import coordinator_request
@@ -207,3 +208,24 @@ def test_coordinator_returns_404_for_missing_document(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_coordinator_distinguishes_database_failure_from_missing_document() -> None:
+    class UnavailableSessionFactory:
+        def begin(self):
+            raise SQLAlchemyError("database offline")
+
+    def unexpected_request(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"Unexpected storage request to {request.url}")
+
+    response = coordinator_request(
+        unexpected_request,
+        "/documents",
+        method="POST",
+        session_factory=UnavailableSessionFactory(),
+        data={"school_id": "school-math"},
+        files={"file": ("database.pdf", b"content", "application/pdf")},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "document catalog is unavailable"}

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import os
+from uuid import UUID
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,9 @@ class CoordinatorSettings:
     transfer_timeout_seconds: float
     max_upload_size_bytes: int
     database_url: str | None = None
+    technical_user_id: UUID = UUID("7d14ef5d-3c61-4ac8-90b5-2bd3f0aa0431")
+    technical_user_email: str = "development-operations@yachayrepo.invalid"
+    technical_user_password_hash: str = "!authentication-disabled!"
 
 
 NODE_IDENTITIES: tuple[tuple[str, str, str], ...] = (
@@ -84,4 +88,18 @@ def load_settings() -> CoordinatorSettings:
         transfer_timeout_seconds=transfer_timeout,
         max_upload_size_bytes=int(max_upload_mb * 1024 * 1024),
         database_url=os.getenv("DATABASE_URL"),
+        technical_user_id=UUID(
+            os.getenv(
+                "TECHNICAL_USER_ID",
+                "7d14ef5d-3c61-4ac8-90b5-2bd3f0aa0431",
+            )
+        ),
+        technical_user_email=os.getenv(
+            "TECHNICAL_USER_EMAIL",
+            "development-operations@yachayrepo.invalid",
+        ),
+        technical_user_password_hash=os.getenv(
+            "TECHNICAL_USER_PASSWORD_HASH",
+            "!authentication-disabled!",
+        ),
     )

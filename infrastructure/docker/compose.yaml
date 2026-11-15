@@ -39,6 +39,9 @@ services:
       DOCUMENT_TRANSFER_TIMEOUT_SECONDS: ${DOCUMENT_TRANSFER_TIMEOUT_SECONDS:-30.0}
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
       DATABASE_URL: ${DATABASE_URL:-}
+      TECHNICAL_USER_ID: ${TECHNICAL_USER_ID:-7d14ef5d-3c61-4ac8-90b5-2bd3f0aa0431}
+      TECHNICAL_USER_EMAIL: ${TECHNICAL_USER_EMAIL:-development-operations@yachayrepo.invalid}
+      TECHNICAL_USER_PASSWORD_HASH: ${TECHNICAL_USER_PASSWORD_HASH:-!authentication-disabled!}
     ports:
       - "8000:8000"
     healthcheck:

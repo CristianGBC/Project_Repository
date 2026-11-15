@@ -20,6 +20,12 @@ class DocumentMetadata(BaseModel):
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     created_at: datetime
     node_id: str
+    title: str | None = None
+    description: str | None = None
+    version_id: UUID | None = None
+    version_number: int | None = None
+    version_status: Literal["pending", "available", "failed"] | None = None
+    target_replicas: int | None = None
 
     @field_validator("created_at")
     @classmethod

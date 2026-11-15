@@ -1,10 +1,11 @@
 # PostgreSQL catalog (Stage 4.2)
 
 PostgreSQL is an independent catalog service on Host B. The FastAPI coordinator
-on Host A is its client; the six storage nodes continue storing files and JSON
-metadata exactly as in Stage 3. PostgreSQL is initially a **single point of
-failure**. This stage does not add database failover, file replication, login,
-or migration of existing JSON metadata.
+on Host A is its client and, since Stage 4.3, uses it as the primary document
+metadata source while storage nodes retain bytes and internal JSON. See
+[`postgresql-document-integration.md`](postgresql-document-integration.md) for
+the document workflow. PostgreSQL remains a **single point of failure**; this
+stage does not add failover, RF=3, login, or automatic legacy import.
 
 ## Schema
 
@@ -115,7 +116,8 @@ DATABASE_URL='postgresql+psycopg://...' python -m backend.app.seed
 ```
 
 It registers six schools, four physical hosts, and the existing logical nodes
-on ports `8001` through `8006`. It creates no users.
+on ports `8001` through `8006`. The Stage 4.3 coordinator separately creates
+its stable, non-admin technical user on the first catalog-backed upload.
 
 ## Isolated database tests
 
@@ -162,5 +164,6 @@ curl http://localhost:8000/nodes
 python -m pytest backend/tests
 ```
 
-Document upload, metadata lookup, and download remain backed by storage-node
-volumes in this stage.
+Document bytes remain backed by storage-node volumes. Since Stage 4.3,
+PostgreSQL is the primary metadata source for coordinator upload, lookup, and
+download operations.
