@@ -217,11 +217,16 @@ que las seis consultas se inicien concurrentemente.
 
 ## Funcionalidades todavía no implementadas
 
-Esta etapa no incluye frontend, PostgreSQL, catálogo central de metadatos,
-versionamiento, replicación, RabbitMQ, monitoreo periódico, recuperación
-automática, autenticación, autorización, cifrado, balanceo de carga ni
-despliegue físico sobre Raspberry Pi.
+Esta etapa no incluye frontend, uso del catálogo PostgreSQL por los endpoints,
+migración de los metadatos JSON existentes, replicación, RabbitMQ, monitoreo
+periódico, recuperación automática, autenticación, autorización, cifrado,
+balanceo de carga ni despliegue físico sobre Raspberry Pi. El esquema preparado
+sí contempla versionamiento y réplicas para etapas posteriores, pero todavía no
+activa esos flujos.
 
-La siguiente etapa deberá incorporar PostgreSQL como catálogo central sin mover
-los archivos fuera de sus nodos. Después de estabilizar ese catálogo podrá
-ampliarse el flujo actual a replicación RF = 3 y recuperación de copias.
+La Etapa 4.2 incorpora el esquema inicial del catálogo PostgreSQL, sus modelos,
+migración Alembic y datos institucionales reproducibles, sin mover los archivos
+fuera de sus nodos ni conectar todavía los endpoints al catálogo. La guía de
+configuración remota, migraciones, pruebas, respaldo y restauración está en
+[`docs/postgresql.md`](docs/postgresql.md). Después de estabilizar ese catálogo
+podrá ampliarse el flujo actual a replicación RF = 3 y recuperación de copias.
