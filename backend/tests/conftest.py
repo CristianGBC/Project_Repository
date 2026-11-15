@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI
 import httpx
+from sqlalchemy.orm import Session, sessionmaker
 
 from backend.app.config import CoordinatorSettings, load_settings
 from backend.app.main import create_app
@@ -43,6 +44,7 @@ def coordinator_request(
     path: str,
     settings: CoordinatorSettings | None = None,
     method: str = "GET",
+    session_factory: sessionmaker[Session] | None = None,
     **kwargs,
 ) -> httpx.Response:
     """Run one coordinator request with an isolated outgoing transport."""
@@ -54,6 +56,7 @@ def coordinator_request(
             application = create_app(
                 settings=settings or load_settings(),
                 http_client=outgoing_client,
+                session_factory=session_factory,
             )
             async with application.router.lifespan_context(application):
                 transport = httpx.ASGITransport(app=application)
