@@ -85,6 +85,16 @@ class SchoolMembership(Base):
     school: Mapped[School] = relationship()
 
 
+class DocumentType(Base):
+    __tablename__ = "document_types"
+
+    id: Mapped[str] = mapped_column(String(30), primary_key=True)
+    code: Mapped[str] = mapped_column(String(30), unique=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
+
+
 class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
@@ -112,6 +122,9 @@ class Document(Base):
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
     school_id: Mapped[str] = mapped_column(ForeignKey("schools.id"))
+    document_type_id: Mapped[str | None] = mapped_column(
+        ForeignKey("document_types.id"), index=True
+    )
     created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     visibility: Mapped[str] = mapped_column(String(20), server_default=text("'school'"))
     current_version_id: Mapped[UUID | None] = mapped_column(
@@ -123,6 +136,7 @@ class Document(Base):
     deleted_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
 
     school: Mapped[School] = relationship()
+    document_type: Mapped[DocumentType | None] = relationship()
 
 
 class DocumentVersion(Base):

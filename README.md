@@ -239,3 +239,11 @@ asignación del número de versión usa bloqueo de fila para soportar subidas
 concurrentes y los archivos anteriores nunca se sobrescriben. La guía de API,
 pruebas desde Swagger y consultas SQL está en
 [`docs/document-versioning-soft-delete.md`](docs/document-versioning-soft-delete.md).
+
+## Clasificación documental
+
+Las cargas nuevas pueden indicar `document_type_id` para clasificar el documento
+como `article`, `study_material`, `syllabus` o `administrative`. La clasificación
+se valida contra el catálogo PostgreSQL `document_types`, pertenece al documento
+completo y se conserva al crear versiones posteriores. El campo permanece
+opcional para mantener compatibles los documentos y clientes anteriores.

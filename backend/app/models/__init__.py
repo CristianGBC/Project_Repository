@@ -4,6 +4,7 @@ from backend.app.models.base import Base
 from backend.app.models.catalog import (
     Document,
     DocumentReplica,
+    DocumentType,
     DocumentVersion,
     PhysicalHost,
     School,
@@ -16,6 +17,7 @@ __all__ = [
     "Base",
     "Document",
     "DocumentReplica",
+    "DocumentType",
     "DocumentVersion",
     "PhysicalHost",
     "School",

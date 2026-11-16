@@ -22,6 +22,8 @@ class DocumentMetadata(BaseModel):
     node_id: str
     title: str | None = None
     description: str | None = None
+    document_type_id: str | None = None
+    document_type_name: str | None = None
     version_id: UUID | None = None
     version_number: int | None = None
     version_status: Literal["pending", "available", "failed"] | None = None

@@ -37,7 +37,10 @@ so later RF=3 selection can spread replicas across physical hosts.
 ## Upload flow
 
 `POST /documents` keeps multipart fields `file` and `school_id` and optionally
-accepts `title` and `description`.
+accepts `title`, `description`, and `document_type_id`. Supported initial type
+IDs are `article`, `study_material`, `syllabus`, and `administrative`. Unknown
+or inactive types return HTTP 400 before contacting a storage node. The field
+is nullable for existing documents and clients.
 
 1. The coordinator validates and spools the file while calculating SHA-256.
 2. A short transaction validates the school, creates the technical user if
@@ -63,9 +66,9 @@ retry, orphan cleanup, and reconciliation are deferred.
 ## Metadata and download
 
 `GET /documents/{school_id}/{document_id}` reads document, current version,
-school, and replica from PostgreSQL. Soft-deleted documents are excluded. The
-response keeps Stage 3 fields and adds title, description, version ID, number,
-status, and target replica count.
+school, document type, and replica from PostgreSQL. Soft-deleted documents are
+excluded. The response keeps Stage 3 fields and adds title, description,
+document type ID and name, version ID, number, status, and target replica count.
 
 Only a genuine catalog miss falls back to old node JSON. Database errors return
 503, soft-deleted rows return 404, and incomplete operations return 409; these
@@ -87,9 +90,9 @@ DATABASE_URL="$DATABASE_URL" alembic current
 DATABASE_URL="$DATABASE_URL" alembic history
 ```
 
-After reviewing the target and backup, apply the existing migration and seed
-explicitly. Stage 4.3 adds no migration because the eight-table schema already
-supports this workflow.
+After reviewing the target and backup, apply migrations and seed explicitly.
+Revision `20261116_02` adds the ninth table, `document_types`, plus the nullable
+foreign key `documents.document_type_id`. Existing rows are not reclassified.
 
 ```bash
 DATABASE_URL="$DATABASE_URL" alembic upgrade head
@@ -103,6 +106,8 @@ Inspect catalog records without exposing credentials:
 psql "$DATABASE_URL" -c "SELECT id, school_id, current_version_id, deleted_at FROM documents ORDER BY created_at DESC LIMIT 10;"
 psql "$DATABASE_URL" -c "SELECT document_id, version_number, status, target_replicas, sha256 FROM document_versions ORDER BY created_at DESC LIMIT 10;"
 psql "$DATABASE_URL" -c "SELECT version_id, node_id, physical_host_id, status, stored_at, verified_at FROM document_replicas ORDER BY created_at DESC LIMIT 10;"
+psql "$DATABASE_URL" -c "SELECT id, code, name, is_active FROM document_types ORDER BY id;"
+psql "$DATABASE_URL" -c "SELECT d.id, d.title, dt.name AS document_type FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id ORDER BY d.created_at DESC LIMIT 10;"
 ```
 
 ## Run and test

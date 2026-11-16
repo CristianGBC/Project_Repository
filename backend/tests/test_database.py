@@ -18,6 +18,7 @@ EXPECTED_TABLES = {
     "users",
     "school_memberships",
     "documents",
+    "document_types",
     "document_versions",
     "physical_hosts",
     "storage_nodes",
@@ -25,7 +26,7 @@ EXPECTED_TABLES = {
 }
 
 
-def test_model_metadata_declares_the_eight_catalog_tables() -> None:
+def test_model_metadata_declares_the_nine_catalog_tables() -> None:
     assert set(Base.metadata.tables) == EXPECTED_TABLES
 
 
@@ -104,7 +105,7 @@ def catalog_ids(database_engine):
     }
 
 
-def test_migration_creates_exactly_the_eight_catalog_tables(database_engine) -> None:
+def test_migration_creates_the_nine_catalog_tables(database_engine) -> None:
     tables = set(inspect(database_engine).get_table_names())
     assert EXPECTED_TABLES <= tables
 

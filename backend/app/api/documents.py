@@ -32,6 +32,7 @@ async def create_document(
     school_id: str = Form(...),
     title: str | None = Form(None),
     description: str | None = Form(None),
+    document_type_id: str | None = Form(None),
 ) -> StoredDocumentResponse:
     client: httpx.AsyncClient = request.app.state.http_client
     settings: CoordinatorSettings = request.app.state.settings
@@ -43,6 +44,7 @@ async def create_document(
         request.app.state.session_factory,
         title,
         description,
+        document_type_id,
     )
 
 
