@@ -37,3 +37,29 @@ class DocumentMetadata(BaseModel):
 
 class StoredDocumentResponse(DocumentMetadata):
     status: Literal["stored"] = "stored"
+
+
+class DocumentVersionSummary(BaseModel):
+    """One immutable version in a document history."""
+
+    version_id: UUID
+    version_number: int = Field(gt=0)
+    filename: str
+    mime_type: str
+    size_bytes: int = Field(gt=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: datetime
+    status: Literal["pending", "available", "failed"]
+    is_current: bool
+
+
+class DocumentVersionHistory(BaseModel):
+    document_id: UUID
+    current_version_id: UUID | None
+    versions: list[DocumentVersionSummary]
+
+
+class DocumentLifecycleResponse(BaseModel):
+    document_id: UUID
+    status: Literal["deleted", "already_deleted", "restored", "already_active"]
+    deleted_at: datetime | None

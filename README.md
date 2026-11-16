@@ -230,3 +230,12 @@ lectura compatible para documentos JSON anteriores. Las guías están en
 [`docs/postgresql.md`](docs/postgresql.md) y
 [`docs/postgresql-document-integration.md`](docs/postgresql-document-integration.md).
 La siguiente etapa podrá ampliar el flujo a RF = 3 y recuperación de copias.
+
+## Etapa 4.4: versionamiento y eliminación lógica
+
+Los documentos admiten versiones inmutables adicionales, historial ordenado,
+descarga de versiones específicas, eliminación lógica y restauración. La
+asignación del número de versión usa bloqueo de fila para soportar subidas
+concurrentes y los archivos anteriores nunca se sobrescriben. La guía de API,
+pruebas desde Swagger y consultas SQL está en
+[`docs/document-versioning-soft-delete.md`](docs/document-versioning-soft-delete.md).

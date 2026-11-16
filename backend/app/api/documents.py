@@ -5,11 +5,21 @@ from fastapi.responses import StreamingResponse
 import httpx
 
 from backend.app.config import CoordinatorSettings
-from backend.app.schemas import DocumentMetadata, StoredDocumentResponse
+from backend.app.schemas import (
+    DocumentLifecycleResponse,
+    DocumentMetadata,
+    DocumentVersionHistory,
+    StoredDocumentResponse,
+)
 from backend.app.services.document_service import (
     download_document,
+    download_document_version,
     get_document_metadata,
+    get_document_versions,
+    restore_document,
+    soft_delete_document,
     upload_document,
+    upload_document_version,
 )
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -33,6 +43,87 @@ async def create_document(
         request.app.state.session_factory,
         title,
         description,
+    )
+
+
+@router.post(
+    "/{document_id}/versions",
+    response_model=StoredDocumentResponse,
+    status_code=201,
+)
+async def create_document_version(
+    request: Request,
+    document_id: str,
+    file: UploadFile = File(...),
+) -> StoredDocumentResponse:
+    return await upload_document_version(
+        request.app.state.http_client,
+        request.app.state.settings,
+        file,
+        document_id,
+        request.app.state.session_factory,
+    )
+
+
+@router.get(
+    "/{document_id}/versions",
+    response_model=DocumentVersionHistory,
+)
+async def read_document_versions(
+    request: Request,
+    document_id: str,
+) -> DocumentVersionHistory:
+    return get_document_versions(
+        request.app.state.session_factory,
+        document_id,
+    )
+
+
+@router.get(
+    "/{document_id}/versions/{version_number}/download",
+    response_class=StreamingResponse,
+)
+async def read_document_version(
+    request: Request,
+    document_id: str,
+    version_number: int,
+) -> StreamingResponse:
+    return await download_document_version(
+        request.app.state.http_client,
+        request.app.state.settings,
+        document_id,
+        version_number,
+        request.app.state.session_factory,
+    )
+
+
+@router.delete(
+    "/{document_id}",
+    response_model=DocumentLifecycleResponse,
+)
+async def delete_document(
+    request: Request,
+    document_id: str,
+) -> DocumentLifecycleResponse:
+    return soft_delete_document(
+        request.app.state.session_factory,
+        request.app.state.settings,
+        document_id,
+    )
+
+
+@router.post(
+    "/{document_id}/restore",
+    response_model=DocumentLifecycleResponse,
+)
+async def restore_deleted_document(
+    request: Request,
+    document_id: str,
+) -> DocumentLifecycleResponse:
+    return restore_document(
+        request.app.state.session_factory,
+        request.app.state.settings,
+        document_id,
     )
 
 
