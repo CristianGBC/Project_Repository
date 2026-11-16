@@ -50,8 +50,9 @@ accepts `title` and `description`.
    verification times, marks the version `available`, and assigns the current
    version.
 
-Confirmed versions are immutable. This stage creates only version 1 and adds no
-update or deletion endpoint.
+Confirmed versions are immutable. Stage 4.3 creates version 1; Stage 4.4 adds
+new-version and soft-delete operations documented in
+[`document-versioning-soft-delete.md`](document-versioning-soft-delete.md).
 
 If storage fails, replica and version become `failed` and the document has no
 current version. A process interruption leaves discoverable `pending` rows. If
@@ -129,8 +130,9 @@ Without `TEST_DATABASE_URL`, PostgreSQL cases skip and API/filesystem tests run.
 
 - RF is fixed at 1; there is no repair worker or cross-host RF=3.
 - PostgreSQL remains a single point of failure.
-- Authentication, authorization, updates, soft-delete endpoint, and automatic
-  recovery are not implemented.
+- Authentication, authorization, permanent purge, and automatic recovery are
+  not implemented. Soft deletion and immutable later versions are available
+  from Stage 4.4.
 - Legacy JSON documents are read-compatible but not automatically imported.
 - SQLAlchemy calls are synchronous but transactions are deliberately short; a
   later high-throughput stage may use an async driver or worker.
