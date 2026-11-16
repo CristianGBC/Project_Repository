@@ -5,7 +5,22 @@ import os
 from sqlalchemy.dialects.postgresql import insert
 
 from backend.app.database import create_database_engine, create_session_factory
-from backend.app.models import PhysicalHost, School, StorageNode
+from backend.app.models import DocumentType, PhysicalHost, School, StorageNode
+
+DOCUMENT_TYPES = (
+    {"id": "article", "code": "article", "name": "Artículo"},
+    {
+        "id": "study_material",
+        "code": "study_material",
+        "name": "Material de estudio",
+    },
+    {"id": "syllabus", "code": "syllabus", "name": "Syllabus"},
+    {
+        "id": "administrative",
+        "code": "administrative",
+        "name": "Documento administrativo",
+    },
+)
 
 SCHOOLS = (
     {
@@ -99,6 +114,9 @@ def seed_initial_catalog() -> None:
     ]
     try:
         with session_factory.begin() as session:
+            session.execute(
+                insert(DocumentType).values(DOCUMENT_TYPES).on_conflict_do_nothing()
+            )
             session.execute(insert(School).values(SCHOOLS).on_conflict_do_nothing())
             session.execute(insert(PhysicalHost).values(hosts).on_conflict_do_nothing())
             session.execute(insert(StorageNode).values(NODES).on_conflict_do_nothing())

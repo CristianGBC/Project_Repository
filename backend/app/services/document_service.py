@@ -26,6 +26,7 @@ from backend.app.config import CoordinatorSettings, NodeSettings
 from backend.app.models import (
     Document,
     DocumentReplica,
+    DocumentType,
     DocumentVersion,
     School,
     StorageNode,
@@ -59,6 +60,7 @@ class CatalogRecord:
     version: DocumentVersion
     school: School
     replica: DocumentReplica | None
+    document_type: DocumentType | None
 
 
 def configured_node(settings: CoordinatorSettings, node_id: str) -> NodeSettings:
@@ -84,7 +86,9 @@ async def _raise_remote_error(response: httpx.Response) -> None:
         detail = response.json().get("detail", "storage request failed")
     except ValueError:
         detail = "storage request failed"
-    status_code = response.status_code if response.status_code in {400, 404, 409, 413} else 502
+    status_code = (
+        response.status_code if response.status_code in {400, 404, 409, 413} else 502
+    )
     raise HTTPException(status_code=status_code, detail=detail)
 
 
@@ -96,7 +100,9 @@ def _database_unavailable() -> HTTPException:
     return HTTPException(status_code=503, detail="document catalog is unavailable")
 
 
-async def _measure_upload(upload: UploadFile, max_size_bytes: int) -> tuple[int, str, BinaryIO]:
+async def _measure_upload(
+    upload: UploadFile, max_size_bytes: int
+) -> tuple[int, str, BinaryIO]:
     size_bytes = 0
     digest = hashlib.sha256()
     prepared = tempfile.SpooledTemporaryFile(
@@ -166,29 +172,49 @@ def _create_pending_catalog_records(
     checksum: str,
     title: str | None,
     description: str | None,
-) -> tuple[Document, DocumentVersion, DocumentReplica, School]:
+    document_type_id: str | None,
+) -> tuple[Document, DocumentVersion, DocumentReplica, School, DocumentType | None]:
     try:
         with session_factory.begin() as session:
             school = session.get(School, school_id)
             if school is None or not school.is_active:
                 raise HTTPException(400, "unknown or inactive school_id")
+            document_type = None
+            if document_type_id is not None:
+                document_type = session.get(DocumentType, document_type_id)
+                if document_type is None or not document_type.is_active:
+                    raise HTTPException(400, "unknown or inactive document_type_id")
             user = _technical_user(session, settings)
             session.flush()
             node = _select_storage_node(session, settings, school_id)
             document = Document(
-                id=uuid4(), title=(title or Path(filename).stem)[:255],
-                description=description, school_id=school.id, created_by=user.id,
+                id=uuid4(),
+                title=(title or Path(filename).stem)[:255],
+                description=description,
+                school_id=school.id,
+                created_by=user.id,
+                document_type_id=(document_type.id if document_type else None),
                 visibility="school",
             )
             version = DocumentVersion(
-                id=uuid4(), document_id=document.id, version_number=1,
-                filename=filename, mime_type=mime_type, size_bytes=size_bytes,
-                sha256=checksum, status="pending", target_replicas=TARGET_REPLICAS,
+                id=uuid4(),
+                document_id=document.id,
+                version_number=1,
+                filename=filename,
+                mime_type=mime_type,
+                size_bytes=size_bytes,
+                sha256=checksum,
+                status="pending",
+                target_replicas=TARGET_REPLICAS,
                 created_by=user.id,
             )
             replica = DocumentReplica(
-                id=uuid4(), version_id=version.id, node_id=node.id,
-                physical_host_id=node.physical_host_id, status="pending", attempts=0,
+                id=uuid4(),
+                version_id=version.id,
+                node_id=node.id,
+                physical_host_id=node.physical_host_id,
+                status="pending",
+                attempts=0,
             )
             # The schema intentionally has a deferred circular reference from
             # documents back to its current version. Explicit phase flushes
@@ -199,7 +225,7 @@ def _create_pending_catalog_records(
             session.flush()
             session.add(replica)
             session.flush()
-            return document, version, replica, school
+            return document, version, replica, school, document_type
     except HTTPException:
         raise
     except SQLAlchemyError as error:
@@ -237,9 +263,7 @@ def _confirm_stored_replica(
     try:
         with session_factory.begin() as session:
             document = session.scalar(
-                select(Document)
-                .where(Document.id == document_id)
-                .with_for_update()
+                select(Document).where(Document.id == document_id).with_for_update()
             )
             version = session.get(DocumentVersion, version_id)
             replica = session.get(DocumentReplica, replica_id)
@@ -279,9 +303,14 @@ def _storage_metadata(
     created_at: datetime,
 ) -> DocumentMetadata:
     return DocumentMetadata(
-        document_id=document_id, filename=filename, school_id=node.node_id,
-        school=node.school, size_bytes=size_bytes, sha256=checksum,
-        created_at=created_at, node_id=node.node_id,
+        document_id=document_id,
+        filename=filename,
+        school_id=node.node_id,
+        school=node.school,
+        size_bytes=size_bytes,
+        sha256=checksum,
+        created_at=created_at,
+        node_id=node.node_id,
     )
 
 
@@ -305,7 +334,8 @@ async def _store_on_node(
             },
             files={
                 "file": (
-                    "document.bin", prepared_file,
+                    "document.bin",
+                    prepared_file,
                     upload.content_type or "application/octet-stream",
                 )
             },
@@ -351,6 +381,7 @@ async def upload_document(
     session_factory: sessionmaker[Session] | None = None,
     title: str | None = None,
     description: str | None = None,
+    document_type_id: str | None = None,
 ) -> StoredDocumentResponse:
     if session_factory is None:
         return await _legacy_upload_document(client, settings, upload, school_id)
@@ -360,10 +391,17 @@ async def upload_document(
     size_bytes, checksum, prepared_file = await _measure_upload(
         upload, settings.max_upload_size_bytes
     )
-    document, version, replica, school = _create_pending_catalog_records(
-        session_factory, settings, canonical_school, filename,
-        upload.content_type or "application/octet-stream", size_bytes, checksum,
-        title, description,
+    document, version, replica, school, document_type = _create_pending_catalog_records(
+        session_factory,
+        settings,
+        canonical_school,
+        filename,
+        upload.content_type or "application/octet-stream",
+        size_bytes,
+        checksum,
+        title,
+        description,
+        document_type_id,
     )
     node = configured_node(settings, replica.node_id)
     created_at = document.created_at or datetime.now(timezone.utc)
@@ -383,11 +421,22 @@ async def upload_document(
 
     _confirm_stored_replica(session_factory, document.id, version.id, replica.id)
     return StoredDocumentResponse(
-        document_id=document.id, filename=filename, school_id=school.id,
-        school=school.name, size_bytes=size_bytes, sha256=checksum,
-        created_at=created_at, node_id=node.node_id, status="stored",
-        title=document.title, description=document.description,
-        version_id=version.id, version_number=1, version_status="available",
+        document_id=document.id,
+        filename=filename,
+        school_id=school.id,
+        school=school.name,
+        size_bytes=size_bytes,
+        sha256=checksum,
+        created_at=created_at,
+        node_id=node.node_id,
+        status="stored",
+        title=document.title,
+        description=document.description,
+        document_type_id=document.document_type_id,
+        document_type_name=document_type.name if document_type else None,
+        version_id=version.id,
+        version_number=1,
+        version_status="available",
         target_replicas=TARGET_REPLICAS,
     )
 
@@ -407,14 +456,12 @@ def _create_pending_version(
     mime_type: str,
     size_bytes: int,
     checksum: str,
-) -> tuple[Document, DocumentVersion, DocumentReplica, School]:
+) -> tuple[Document, DocumentVersion, DocumentReplica, School, DocumentType | None]:
     parsed_id = _document_uuid(document_id)
     try:
         with session_factory.begin() as session:
             document = session.scalar(
-                select(Document)
-                .where(Document.id == parsed_id)
-                .with_for_update()
+                select(Document).where(Document.id == parsed_id).with_for_update()
             )
             if document is None or document.deleted_at is not None:
                 raise HTTPException(404, "document does not exist")
@@ -422,13 +469,21 @@ def _create_pending_version(
             if school is None or not school.is_active:
                 raise HTTPException(409, "document school is unavailable")
             user = _technical_user(session, settings)
+            document_type = (
+                session.get(DocumentType, document.document_type_id)
+                if document.document_type_id
+                else None
+            )
             session.flush()
             node = _select_storage_node(session, settings, document.school_id)
-            latest_number = session.scalar(
-                select(func.max(DocumentVersion.version_number)).where(
-                    DocumentVersion.document_id == document.id
+            latest_number = (
+                session.scalar(
+                    select(func.max(DocumentVersion.version_number)).where(
+                        DocumentVersion.document_id == document.id
+                    )
                 )
-            ) or 0
+                or 0
+            )
             version = DocumentVersion(
                 id=uuid4(),
                 document_id=document.id,
@@ -453,7 +508,7 @@ def _create_pending_version(
             )
             session.add(replica)
             session.flush()
-            return document, version, replica, school
+            return document, version, replica, school, document_type
     except HTTPException:
         raise
     except SQLAlchemyError as error:
@@ -473,7 +528,7 @@ async def upload_document_version(
     size_bytes, checksum, prepared_file = await _measure_upload(
         upload, settings.max_upload_size_bytes
     )
-    document, version, replica, school = _create_pending_version(
+    document, version, replica, school, document_type = _create_pending_version(
         session_factory,
         settings,
         document_id,
@@ -491,9 +546,7 @@ async def upload_document_version(
     )
     try:
         try:
-            await _store_on_node(
-                client, upload, prepared_file, storage_metadata, node
-            )
+            await _store_on_node(client, upload, prepared_file, storage_metadata, node)
         except HTTPException as error:
             _record_failed_transfer(
                 session_factory, version.id, replica.id, str(error.detail)
@@ -515,6 +568,8 @@ async def upload_document_version(
         status="stored",
         title=document.title,
         description=document.description,
+        document_type_id=document.document_type_id,
+        document_type_name=document_type.name if document_type else None,
         version_id=version.id,
         version_number=version.version_number,
         version_status="available",
@@ -585,6 +640,11 @@ def _specific_version_record(
             if version is None:
                 raise HTTPException(404, "document version does not exist")
             school = session.get(School, document.school_id)
+            document_type = (
+                session.get(DocumentType, document.document_type_id)
+                if document.document_type_id
+                else None
+            )
             replica = session.scalar(
                 select(DocumentReplica).where(
                     DocumentReplica.version_id == version.id,
@@ -593,10 +653,10 @@ def _specific_version_record(
             )
             if school is None:
                 raise HTTPException(409, "document catalog is inconsistent")
-            for value in (document, version, school, replica):
+            for value in (document, version, school, replica, document_type):
                 if value is not None:
                     session.expunge(value)
-            return CatalogRecord(document, version, school, replica)
+            return CatalogRecord(document, version, school, replica, document_type)
     except HTTPException:
         raise
     except SQLAlchemyError as error:
@@ -612,21 +672,15 @@ async def download_document_version(
 ) -> StreamingResponse:
     if session_factory is None:
         raise _database_unavailable()
-    record = _specific_version_record(
-        session_factory, document_id, version_number
-    )
+    record = _specific_version_record(session_factory, document_id, version_number)
     if record.version.status != "available" or record.replica is None:
         raise HTTPException(409, "document version has no healthy replica")
     metadata = _metadata_from_catalog(record)
     node = configured_node(settings, record.replica.node_id)
     storage_id = (
-        record.document.id
-        if record.version.version_number == 1
-        else record.version.id
+        record.document.id if record.version.version_number == 1 else record.version.id
     )
-    return await _verified_download(
-        client, settings, node, str(storage_id), metadata
-    )
+    return await _verified_download(client, settings, node, str(storage_id), metadata)
 
 
 def soft_delete_document(
@@ -640,9 +694,7 @@ def soft_delete_document(
     try:
         with session_factory.begin() as session:
             document = session.scalar(
-                select(Document)
-                .where(Document.id == parsed_id)
-                .with_for_update()
+                select(Document).where(Document.id == parsed_id).with_for_update()
             )
             if document is None:
                 raise HTTPException(404, "document does not exist")
@@ -679,9 +731,7 @@ def restore_document(
     try:
         with session_factory.begin() as session:
             document = session.scalar(
-                select(Document)
-                .where(Document.id == parsed_id)
-                .with_for_update()
+                select(Document).where(Document.id == parsed_id).with_for_update()
             )
             if document is None:
                 raise HTTPException(404, "document does not exist")
@@ -725,6 +775,11 @@ def _catalog_record(
                 raise HTTPException(409, "document upload is incomplete")
             version = session.get(DocumentVersion, document.current_version_id)
             school = session.get(School, document.school_id)
+            document_type = (
+                session.get(DocumentType, document.document_type_id)
+                if document.document_type_id
+                else None
+            )
             if version is None or school is None:
                 raise HTTPException(409, "document catalog is inconsistent")
             replica = session.scalar(
@@ -733,10 +788,10 @@ def _catalog_record(
                     DocumentReplica.status == "healthy",
                 )
             )
-            for value in (document, version, school, replica):
+            for value in (document, version, school, replica, document_type):
                 if value is not None:
                     session.expunge(value)
-            return CatalogRecord(document, version, school, replica)
+            return CatalogRecord(document, version, school, replica, document_type)
     except HTTPException:
         raise
     except SQLAlchemyError as error:
@@ -746,14 +801,24 @@ def _catalog_record(
 def _metadata_from_catalog(record: CatalogRecord) -> DocumentMetadata:
     version = record.version
     return DocumentMetadata(
-        document_id=record.document.id, filename=version.filename,
-        school_id=record.school.id, school=record.school.name,
-        size_bytes=version.size_bytes, sha256=version.sha256,
+        document_id=record.document.id,
+        filename=version.filename,
+        school_id=record.school.id,
+        school=record.school.name,
+        size_bytes=version.size_bytes,
+        sha256=version.sha256,
         created_at=record.document.created_at,
         node_id=record.replica.node_id if record.replica else "unavailable",
-        title=record.document.title, description=record.document.description,
-        version_id=version.id, version_number=version.version_number,
-        version_status=version.status, target_replicas=version.target_replicas,
+        title=record.document.title,
+        description=record.document.description,
+        document_type_id=record.document.document_type_id,
+        document_type_name=(
+            record.document_type.name if record.document_type else None
+        ),
+        version_id=version.id,
+        version_number=version.version_number,
+        version_status=version.status,
+        target_replicas=version.target_replicas,
     )
 
 
@@ -786,7 +851,9 @@ async def get_document_metadata(
     session_factory: sessionmaker[Session] | None = None,
 ) -> DocumentMetadata:
     if session_factory is None:
-        return await _legacy_get_document_metadata(client, settings, school_id, document_id)
+        return await _legacy_get_document_metadata(
+            client, settings, school_id, document_id
+        )
     canonical_school = canonical_school_id(school_id)
     record = _catalog_record(session_factory, canonical_school, document_id)
     if record is not None:
@@ -797,14 +864,17 @@ async def get_document_metadata(
 
 
 def _download_headers(filename: str) -> dict[str, str]:
-    ascii_name = "".join(
-        character for character in filename
-        if 32 <= ord(character) < 127 and character not in {'"', "\\"}
-    ) or "document"
+    ascii_name = (
+        "".join(
+            character
+            for character in filename
+            if 32 <= ord(character) < 127 and character not in {'"', "\\"}
+        )
+        or "document"
+    )
     encoded_name = quote(filename, safe="")
     return {
-        "Content-Disposition":
-            f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_name}"
+        "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_name}"
     }
 
 
@@ -856,7 +926,8 @@ async def _verified_download(
         raise HTTPException(409, "document integrity verification failed")
     temporary.seek(0)
     return StreamingResponse(
-        _stream_and_close(temporary), media_type="application/octet-stream",
+        _stream_and_close(temporary),
+        media_type="application/octet-stream",
         headers=_download_headers(metadata.filename),
     )
 
@@ -869,13 +940,17 @@ async def download_document(
     session_factory: sessionmaker[Session] | None = None,
 ) -> StreamingResponse:
     if session_factory is None:
-        metadata = await _legacy_get_document_metadata(client, settings, school_id, document_id)
+        metadata = await _legacy_get_document_metadata(
+            client, settings, school_id, document_id
+        )
         node = configured_node(settings, SCHOOL_TO_NODE.get(school_id, school_id))
         return await _verified_download(client, settings, node, document_id, metadata)
     canonical_school = canonical_school_id(school_id)
     record = _catalog_record(session_factory, canonical_school, document_id)
     if record is None:
-        metadata = await _legacy_get_document_metadata(client, settings, school_id, document_id)
+        metadata = await _legacy_get_document_metadata(
+            client, settings, school_id, document_id
+        )
         node = configured_node(settings, metadata.node_id)
         return await _verified_download(client, settings, node, document_id, metadata)
     if record.version.status != "available" or record.replica is None:
@@ -883,9 +958,7 @@ async def download_document(
     metadata = _metadata_from_catalog(record)
     node = configured_node(settings, record.replica.node_id)
     storage_id = (
-        record.document.id
-        if record.version.version_number == 1
-        else record.version.id
+        record.document.id if record.version.version_number == 1 else record.version.id
     )
     try:
         return await _verified_download(
@@ -898,7 +971,9 @@ async def download_document(
                     replica = session.get(DocumentReplica, record.replica.id)
                     if replica is not None:
                         replica.status = "missing"
-                        replica.last_error = "registered file is missing from storage node"
+                        replica.last_error = (
+                            "registered file is missing from storage node"
+                        )
             except SQLAlchemyError:
                 pass
             raise HTTPException(409, "registered replica is missing") from error

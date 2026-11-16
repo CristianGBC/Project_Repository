@@ -13,7 +13,13 @@ from sqlalchemy import create_engine, select
 
 from backend.app.config import load_settings
 from backend.app.database import create_session_factory
-from backend.app.models import Document, DocumentReplica, DocumentVersion, User
+from backend.app.models import (
+    Document,
+    DocumentReplica,
+    DocumentType,
+    DocumentVersion,
+    User,
+)
 from backend.app.seed import seed_initial_catalog
 from backend.tests.conftest import coordinator_request
 from backend.tests.test_coordinator_documents import memory_storage_handler
@@ -63,6 +69,7 @@ def test_upload_persists_document_version_replica_and_technical_user(
             "school_id": "school-math",
             "title": "Distributed catalog",
             "description": "Stage 4.3",
+            "document_type_id": "article",
         },
         files={"file": ("catalog.pdf", content, "application/pdf")},
     )
@@ -74,6 +81,8 @@ def test_upload_persists_document_version_replica_and_technical_user(
     assert payload["target_replicas"] == 1
     assert payload["version_number"] == 1
     assert payload["version_status"] == "available"
+    assert payload["document_type_id"] == "article"
+    assert payload["document_type_name"] == "Artículo"
     assert payload["sha256"] == hashlib.sha256(content).hexdigest()
 
     with catalog_session_factory() as session:
@@ -84,12 +93,44 @@ def test_upload_persists_document_version_replica_and_technical_user(
         )
         technical_user = session.get(User, load_settings().technical_user_id)
         assert document.current_version_id == version.id
+        assert document.document_type_id == "article"
         assert version.target_replicas == 1
         assert version.status == "available"
         assert replica.status == "healthy"
         assert replica.node_id == "node-math"
         assert replica.stored_at is not None and replica.verified_at is not None
         assert technical_user is not None and technical_user.is_admin is False
+
+
+def test_seed_registers_document_types_and_upload_rejects_unknown_type(
+    catalog_session_factory,
+) -> None:
+    with catalog_session_factory() as session:
+        types = session.query(DocumentType).order_by(DocumentType.id).all()
+        assert [(item.id, item.name) for item in types] == [
+            ("administrative", "Documento administrativo"),
+            ("article", "Artículo"),
+            ("study_material", "Material de estudio"),
+            ("syllabus", "Syllabus"),
+        ]
+
+    def unexpected_request(request):
+        raise AssertionError(f"Unexpected storage request to {request.url}")
+
+    response = _request(
+        unexpected_request,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "school-math",
+            "document_type_id": "unknown-type",
+        },
+        files={"file": ("unknown.pdf", b"content", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "unknown or inactive document_type_id"
 
 
 def test_metadata_survives_new_coordinator_and_download_uses_catalog_location(
@@ -134,6 +175,7 @@ def test_failed_node_leaves_a_failed_reconcilable_operation(
 
     def unavailable(request):
         import httpx
+
         raise httpx.ConnectError("offline", request=request)
 
     response = _request(
@@ -198,9 +240,7 @@ def test_versions_two_and_three_history_and_specific_downloads(
         assert response.status_code == 201, response.text
         assert response.json()["document_id"] == document_id
         assert response.json()["version_number"] == number
-        assert response.json()["sha256"] == hashlib.sha256(
-            contents[number]
-        ).hexdigest()
+        assert response.json()["sha256"] == hashlib.sha256(contents[number]).hexdigest()
 
     history = _request(
         handler,
@@ -243,6 +283,7 @@ def test_failed_new_version_preserves_previous_current_version(
 
     def unavailable(request):
         import httpx
+
         raise httpx.ConnectError("offline", request=request)
 
     failed = _request(
@@ -351,9 +392,7 @@ def test_soft_delete_restricts_reads_and_restore_preserves_versions_and_files(
     with catalog_session_factory() as session:
         document = session.get(Document, document_id)
         versions = session.scalars(
-            select(DocumentVersion).where(
-                DocumentVersion.document_id == document.id
-            )
+            select(DocumentVersion).where(DocumentVersion.document_id == document.id)
         ).all()
         replicas = session.scalars(
             select(DocumentReplica).where(
