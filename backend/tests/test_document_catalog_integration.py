@@ -18,6 +18,7 @@ from backend.app.models import (
     DocumentReplica,
     DocumentType,
     DocumentVersion,
+    Subject,
     User,
 )
 from backend.app.seed import seed_initial_catalog
@@ -53,6 +54,26 @@ def _request(handler, session_factory, path, method="GET", **kwargs):
         session_factory=session_factory,
         **kwargs,
     )
+
+
+def _create_subject(session_factory, code: str, name: str | None = None) -> dict:
+    def unexpected_request(request):
+        raise AssertionError(f"Unexpected storage request to {request.url}")
+
+    response = _request(
+        unexpected_request,
+        session_factory,
+        "/subjects",
+        method="POST",
+        json={
+            "school_id": "school-math",
+            "code": code,
+            "name": name or code,
+            "description": "Integration test subject",
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 def test_upload_persists_document_version_replica_and_technical_user(
@@ -436,3 +457,284 @@ def test_soft_delete_restricts_reads_and_restore_preserves_versions_and_files(
     assert history.status_code == 200 and len(history.json()["versions"]) == 2
     assert version_one.content == b"version one"
     assert version_two.content == second_content
+
+
+def test_subject_crud_school_filter_and_duplicate_code(catalog_session_factory) -> None:
+    suffix = uuid4().hex[:8]
+    subject = _create_subject(
+        catalog_session_factory,
+        f"ALG-{suffix}",
+        "Álgebra Lineal",
+    )
+    handler = memory_storage_handler()
+
+    listed = _request(
+        handler,
+        catalog_session_factory,
+        "/subjects?school_id=school-math",
+    )
+    fetched = _request(
+        handler,
+        catalog_session_factory,
+        f"/subjects/{subject['id']}",
+    )
+    updated = _request(
+        handler,
+        catalog_session_factory,
+        f"/subjects/{subject['id']}",
+        method="PATCH",
+        json={"name": "Álgebra Lineal I", "is_active": False},
+    )
+    duplicate = _request(
+        handler,
+        catalog_session_factory,
+        "/subjects",
+        method="POST",
+        json={
+            "school_id": "school-math",
+            "code": subject["code"],
+            "name": "Duplicate",
+        },
+    )
+
+    assert any(item["id"] == subject["id"] for item in listed.json())
+    assert fetched.json()["school_id"] == "school-math"
+    assert updated.json()["name"] == "Álgebra Lineal I"
+    assert updated.json()["is_active"] is False
+    assert duplicate.status_code == 409
+
+
+def test_upload_subject_rules_and_many_to_many_persistence(
+    catalog_session_factory,
+) -> None:
+    suffix = uuid4().hex[:8]
+    algebra = _create_subject(catalog_session_factory, f"ALG2-{suffix}", "Álgebra")
+    calculus = _create_subject(catalog_session_factory, f"CALC-{suffix}", "Cálculo")
+    handler = memory_storage_handler()
+
+    missing_required = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "school-math",
+            "document_type_id": "syllabus",
+        },
+        files={"file": ("syllabus.pdf", b"syllabus", "application/pdf")},
+    )
+    uploaded = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "school-math",
+            "document_type_id": "study_material",
+            "subject_ids": [algebra["id"], calculus["id"]],
+        },
+        files={"file": ("material.pdf", b"material", "application/pdf")},
+    )
+    article = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "school-math",
+            "document_type_id": "article",
+        },
+        files={"file": ("article.pdf", b"article", "application/pdf")},
+    )
+
+    assert missing_required.status_code == 400
+    assert (
+        missing_required.json()["detail"]
+        == "document type requires at least one subject"
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    assert {item["id"] for item in uploaded.json()["subjects"]} == {
+        algebra["id"],
+        calculus["id"],
+    }
+    assert article.status_code == 201
+    assert article.json()["subjects"] == []
+    with catalog_session_factory() as session:
+        document = session.get(Document, uploaded.json()["document_id"])
+        assert {str(subject.id) for subject in document.subjects} == {
+            algebra["id"],
+            calculus["id"],
+        }
+
+
+def test_upload_rejects_inactive_or_other_school_subject(
+    catalog_session_factory,
+) -> None:
+    suffix = uuid4().hex[:8]
+    inactive = _create_subject(catalog_session_factory, f"INACTIVE-{suffix}")
+    handler = memory_storage_handler()
+    _request(
+        handler,
+        catalog_session_factory,
+        f"/subjects/{inactive['id']}",
+        method="PATCH",
+        json={"is_active": False},
+    )
+    other_school = _request(
+        handler,
+        catalog_session_factory,
+        "/subjects",
+        method="POST",
+        json={
+            "school_id": "school-bio",
+            "code": f"BIO-{suffix}",
+            "name": "Biología",
+        },
+    ).json()
+
+    inactive_response = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "school-math",
+            "document_type_id": "syllabus",
+            "subject_ids": [inactive["id"]],
+        },
+        files={"file": ("inactive.pdf", b"content", "application/pdf")},
+    )
+    other_school_response = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "school-math",
+            "document_type_id": "syllabus",
+            "subject_ids": [other_school["id"]],
+        },
+        files={"file": ("other-school.pdf", b"content", "application/pdf")},
+    )
+
+    assert inactive_response.status_code == 400
+    assert inactive_response.json()["detail"] == "one or more subjects are inactive"
+    assert other_school_response.status_code == 400
+    assert (
+        other_school_response.json()["detail"]
+        == "subjects must belong to the document school"
+    )
+
+
+def test_replace_subjects_preserves_versions_and_enforces_type_rule(
+    catalog_session_factory,
+) -> None:
+    suffix = uuid4().hex[:8]
+    first_subject = _create_subject(catalog_session_factory, f"NUM-{suffix}")
+    second_subject = _create_subject(catalog_session_factory, f"OPT-{suffix}")
+    handler = memory_storage_handler()
+    uploaded = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "school-math",
+            "document_type_id": "study_material",
+            "subject_ids": [first_subject["id"]],
+        },
+        files={"file": ("numerical.pdf", b"v1", "application/pdf")},
+    ).json()
+    document_id = uploaded["document_id"]
+    second_version = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/{document_id}/versions",
+        method="POST",
+        files={"file": ("numerical-v2.pdf", b"v2", "application/pdf")},
+    )
+    before = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/{document_id}/versions",
+    ).json()
+    replaced = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/{document_id}/subjects",
+        method="PUT",
+        json={"subject_ids": [second_subject["id"]]},
+    )
+    rejected_empty = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/{document_id}/subjects",
+        method="PUT",
+        json={"subject_ids": []},
+    )
+    after = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/{document_id}/versions",
+    ).json()
+
+    assert second_version.status_code == 201
+    assert [item["id"] for item in replaced.json()["subjects"]] == [
+        second_subject["id"]
+    ]
+    assert rejected_empty.status_code == 400
+    assert before == after
+
+
+def test_document_filters_and_subject_documents_exclude_soft_deleted(
+    catalog_session_factory,
+) -> None:
+    suffix = uuid4().hex[:8]
+    subject = _create_subject(catalog_session_factory, f"FILTER-{suffix}")
+    handler = memory_storage_handler()
+    uploaded = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "school-math",
+            "document_type_id": "syllabus",
+            "subject_ids": [subject["id"]],
+        },
+        files={"file": ("filter.pdf", b"filter", "application/pdf")},
+    ).json()
+    query = (
+        "/documents?school_id=school-math"
+        f"&subject_id={subject['id']}&document_type_id=syllabus"
+    )
+    filtered = _request(handler, catalog_session_factory, query)
+    by_subject = _request(
+        handler,
+        catalog_session_factory,
+        f"/subjects/{subject['id']}/documents",
+    )
+
+    assert [item["document_id"] for item in filtered.json()] == [
+        uploaded["document_id"]
+    ]
+    assert [item["document_id"] for item in by_subject.json()] == [
+        uploaded["document_id"]
+    ]
+
+    deleted = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/{uploaded['document_id']}",
+        method="DELETE",
+    )
+    assert deleted.status_code == 200
+    assert _request(handler, catalog_session_factory, query).json() == []
+    assert (
+        _request(
+            handler,
+            catalog_session_factory,
+            f"/subjects/{subject['id']}/documents",
+        ).json()
+        == []
+    )

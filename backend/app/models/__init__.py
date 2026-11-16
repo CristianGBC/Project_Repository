@@ -10,7 +10,9 @@ from backend.app.models.catalog import (
     School,
     SchoolMembership,
     StorageNode,
+    Subject,
     User,
+    document_subjects,
 )
 
 __all__ = [
@@ -23,5 +25,7 @@ __all__ = [
     "School",
     "SchoolMembership",
     "StorageNode",
+    "Subject",
     "User",
+    "document_subjects",
 ]

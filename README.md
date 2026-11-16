@@ -247,3 +247,11 @@ como `article`, `study_material`, `syllabus` o `administrative`. La clasificaci�
 se valida contra el catálogo PostgreSQL `document_types`, pertenece al documento
 completo y se conserva al crear versiones posteriores. El campo permanece
 opcional para mantener compatibles los documentos y clientes anteriores.
+
+## Gestión de materias
+
+Los documentos pueden asociarse con cero, una o varias materias mediante el
+catálogo PostgreSQL. Los sílabos y materiales de estudio requieren al menos una;
+los artículos y documentos administrativos permiten asociaciones opcionales.
+La guía de migración, endpoints, pruebas Swagger y consultas SQL está en
+[`docs/document-subjects.md`](docs/document-subjects.md).

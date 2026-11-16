@@ -30,14 +30,18 @@ from backend.app.models import (
     DocumentVersion,
     School,
     StorageNode,
+    Subject,
     User,
+    document_subjects,
 )
 from backend.app.schemas import (
     DocumentLifecycleResponse,
     DocumentMetadata,
+    DocumentSubjectsResponse,
     DocumentVersionHistory,
     DocumentVersionSummary,
     StoredDocumentResponse,
+    SubjectSummary,
 )
 
 CHUNK_SIZE = 1024 * 1024
@@ -61,6 +65,7 @@ class CatalogRecord:
     school: School
     replica: DocumentReplica | None
     document_type: DocumentType | None
+    subjects: tuple[Subject, ...]
 
 
 def configured_node(settings: CoordinatorSettings, node_id: str) -> NodeSettings:
@@ -98,6 +103,49 @@ def _service_unavailable(error: httpx.RequestError) -> HTTPException:
 
 def _database_unavailable() -> HTTPException:
     return HTTPException(status_code=503, detail="document catalog is unavailable")
+
+
+def _subject_summaries(
+    subjects: list[Subject] | tuple[Subject, ...],
+) -> list[SubjectSummary]:
+    return [
+        SubjectSummary(
+            id=subject.id,
+            school_id=subject.school_id,
+            code=subject.code,
+            name=subject.name,
+            is_active=subject.is_active,
+        )
+        for subject in sorted(subjects, key=lambda item: (item.code, str(item.id)))
+    ]
+
+
+def _active_subjects(
+    session: Session,
+    subject_ids: list[UUID] | None,
+    school_id: str,
+) -> list[Subject]:
+    unique_ids = list(dict.fromkeys(subject_ids or []))
+    if not unique_ids:
+        return []
+    subjects = session.scalars(select(Subject).where(Subject.id.in_(unique_ids))).all()
+    subjects_by_id = {subject.id: subject for subject in subjects}
+    if set(subjects_by_id) != set(unique_ids):
+        raise HTTPException(400, "one or more subjects do not exist")
+    ordered = [subjects_by_id[subject_id] for subject_id in unique_ids]
+    if any(not subject.is_active for subject in ordered):
+        raise HTTPException(400, "one or more subjects are inactive")
+    if any(subject.school_id != school_id for subject in ordered):
+        raise HTTPException(400, "subjects must belong to the document school")
+    return ordered
+
+
+def _validate_subject_requirement(
+    document_type: DocumentType | None,
+    subjects: list[Subject],
+) -> None:
+    if document_type is not None and document_type.requires_subject and not subjects:
+        raise HTTPException(400, "document type requires at least one subject")
 
 
 async def _measure_upload(
@@ -173,7 +221,15 @@ def _create_pending_catalog_records(
     title: str | None,
     description: str | None,
     document_type_id: str | None,
-) -> tuple[Document, DocumentVersion, DocumentReplica, School, DocumentType | None]:
+    subject_ids: list[UUID] | None,
+) -> tuple[
+    Document,
+    DocumentVersion,
+    DocumentReplica,
+    School,
+    DocumentType | None,
+    list[Subject],
+]:
     try:
         with session_factory.begin() as session:
             school = session.get(School, school_id)
@@ -184,6 +240,8 @@ def _create_pending_catalog_records(
                 document_type = session.get(DocumentType, document_type_id)
                 if document_type is None or not document_type.is_active:
                     raise HTTPException(400, "unknown or inactive document_type_id")
+            subjects = _active_subjects(session, subject_ids, school.id)
+            _validate_subject_requirement(document_type, subjects)
             user = _technical_user(session, settings)
             session.flush()
             node = _select_storage_node(session, settings, school_id)
@@ -220,12 +278,13 @@ def _create_pending_catalog_records(
             # documents back to its current version. Explicit phase flushes
             # make the initial forward FK ordering unambiguous to SQLAlchemy.
             session.add(document)
+            document.subjects = subjects
             session.flush()
             session.add(version)
             session.flush()
             session.add(replica)
             session.flush()
-            return document, version, replica, school, document_type
+            return document, version, replica, school, document_type, subjects
     except HTTPException:
         raise
     except SQLAlchemyError as error:
@@ -382,6 +441,7 @@ async def upload_document(
     title: str | None = None,
     description: str | None = None,
     document_type_id: str | None = None,
+    subject_ids: list[UUID] | None = None,
 ) -> StoredDocumentResponse:
     if session_factory is None:
         return await _legacy_upload_document(client, settings, upload, school_id)
@@ -391,17 +451,20 @@ async def upload_document(
     size_bytes, checksum, prepared_file = await _measure_upload(
         upload, settings.max_upload_size_bytes
     )
-    document, version, replica, school, document_type = _create_pending_catalog_records(
-        session_factory,
-        settings,
-        canonical_school,
-        filename,
-        upload.content_type or "application/octet-stream",
-        size_bytes,
-        checksum,
-        title,
-        description,
-        document_type_id,
+    document, version, replica, school, document_type, subjects = (
+        _create_pending_catalog_records(
+            session_factory,
+            settings,
+            canonical_school,
+            filename,
+            upload.content_type or "application/octet-stream",
+            size_bytes,
+            checksum,
+            title,
+            description,
+            document_type_id,
+            subject_ids,
+        )
     )
     node = configured_node(settings, replica.node_id)
     created_at = document.created_at or datetime.now(timezone.utc)
@@ -434,6 +497,7 @@ async def upload_document(
         description=document.description,
         document_type_id=document.document_type_id,
         document_type_name=document_type.name if document_type else None,
+        subjects=_subject_summaries(subjects),
         version_id=version.id,
         version_number=1,
         version_status="available",
@@ -456,7 +520,14 @@ def _create_pending_version(
     mime_type: str,
     size_bytes: int,
     checksum: str,
-) -> tuple[Document, DocumentVersion, DocumentReplica, School, DocumentType | None]:
+) -> tuple[
+    Document,
+    DocumentVersion,
+    DocumentReplica,
+    School,
+    DocumentType | None,
+    list[Subject],
+]:
     parsed_id = _document_uuid(document_id)
     try:
         with session_factory.begin() as session:
@@ -474,6 +545,7 @@ def _create_pending_version(
                 if document.document_type_id
                 else None
             )
+            subjects = list(document.subjects)
             session.flush()
             node = _select_storage_node(session, settings, document.school_id)
             latest_number = (
@@ -508,7 +580,7 @@ def _create_pending_version(
             )
             session.add(replica)
             session.flush()
-            return document, version, replica, school, document_type
+            return document, version, replica, school, document_type, subjects
     except HTTPException:
         raise
     except SQLAlchemyError as error:
@@ -528,14 +600,16 @@ async def upload_document_version(
     size_bytes, checksum, prepared_file = await _measure_upload(
         upload, settings.max_upload_size_bytes
     )
-    document, version, replica, school, document_type = _create_pending_version(
-        session_factory,
-        settings,
-        document_id,
-        filename,
-        upload.content_type or "application/octet-stream",
-        size_bytes,
-        checksum,
+    document, version, replica, school, document_type, subjects = (
+        _create_pending_version(
+            session_factory,
+            settings,
+            document_id,
+            filename,
+            upload.content_type or "application/octet-stream",
+            size_bytes,
+            checksum,
+        )
     )
     node = configured_node(settings, replica.node_id)
     created_at = version.created_at or datetime.now(timezone.utc)
@@ -570,6 +644,7 @@ async def upload_document_version(
         description=document.description,
         document_type_id=document.document_type_id,
         document_type_name=document_type.name if document_type else None,
+        subjects=_subject_summaries(subjects),
         version_id=version.id,
         version_number=version.version_number,
         version_status="available",
@@ -618,6 +693,95 @@ def get_document_versions(
         raise _database_unavailable() from error
 
 
+def replace_document_subjects(
+    session_factory: sessionmaker[Session] | None,
+    document_id: str,
+    subject_ids: list[UUID],
+) -> DocumentSubjectsResponse:
+    if session_factory is None:
+        raise _database_unavailable()
+    parsed_id = _document_uuid(document_id)
+    try:
+        with session_factory.begin() as session:
+            document = session.scalar(
+                select(Document).where(Document.id == parsed_id).with_for_update()
+            )
+            if document is None or document.deleted_at is not None:
+                raise HTTPException(404, "document does not exist")
+            document_type = (
+                session.get(DocumentType, document.document_type_id)
+                if document.document_type_id
+                else None
+            )
+            subjects = _active_subjects(session, subject_ids, document.school_id)
+            _validate_subject_requirement(document_type, subjects)
+            document.subjects = subjects
+            document.updated_at = datetime.now(timezone.utc)
+            session.flush()
+            return DocumentSubjectsResponse(
+                document_id=document.id,
+                subjects=_subject_summaries(subjects),
+            )
+    except HTTPException:
+        raise
+    except SQLAlchemyError as error:
+        raise _database_unavailable() from error
+
+
+def list_documents(
+    session_factory: sessionmaker[Session] | None,
+    school_id: str | None,
+    subject_id: UUID | None,
+    document_type_id: str | None,
+) -> list[DocumentMetadata]:
+    if session_factory is None:
+        raise _database_unavailable()
+    canonical_school = canonical_school_id(school_id) if school_id else None
+    try:
+        with session_factory() as session:
+            query = select(Document.id).where(
+                Document.deleted_at.is_(None),
+                Document.current_version_id.is_not(None),
+            )
+            if canonical_school is not None:
+                query = query.where(Document.school_id == canonical_school)
+            if document_type_id is not None:
+                query = query.where(Document.document_type_id == document_type_id)
+            if subject_id is not None:
+                query = query.join(
+                    document_subjects,
+                    document_subjects.c.document_id == Document.id,
+                ).where(document_subjects.c.subject_id == subject_id)
+            document_ids = session.scalars(query.distinct().order_by(Document.id)).all()
+    except SQLAlchemyError as error:
+        raise _database_unavailable() from error
+
+    results: list[DocumentMetadata] = []
+    for document_id_value in document_ids:
+        if canonical_school is None:
+            try:
+                with session_factory() as session:
+                    document_school = session.scalar(
+                        select(Document.school_id).where(
+                            Document.id == document_id_value
+                        )
+                    )
+            except SQLAlchemyError as error:
+                raise _database_unavailable() from error
+        else:
+            document_school = canonical_school
+        if document_school is None:
+            continue
+        record = _catalog_record(
+            session_factory,
+            document_school,
+            str(document_id_value),
+        )
+        if record is not None:
+            results.append(_metadata_from_catalog(record))
+    return results
+
+
 def _specific_version_record(
     session_factory: sessionmaker[Session],
     document_id: str,
@@ -645,6 +809,7 @@ def _specific_version_record(
                 if document.document_type_id
                 else None
             )
+            subjects = tuple(document.subjects)
             replica = session.scalar(
                 select(DocumentReplica).where(
                     DocumentReplica.version_id == version.id,
@@ -653,10 +818,24 @@ def _specific_version_record(
             )
             if school is None:
                 raise HTTPException(409, "document catalog is inconsistent")
-            for value in (document, version, school, replica, document_type):
+            for value in (
+                document,
+                version,
+                school,
+                replica,
+                document_type,
+                *subjects,
+            ):
                 if value is not None:
                     session.expunge(value)
-            return CatalogRecord(document, version, school, replica, document_type)
+            return CatalogRecord(
+                document,
+                version,
+                school,
+                replica,
+                document_type,
+                subjects,
+            )
     except HTTPException:
         raise
     except SQLAlchemyError as error:
@@ -780,6 +959,7 @@ def _catalog_record(
                 if document.document_type_id
                 else None
             )
+            subjects = tuple(document.subjects)
             if version is None or school is None:
                 raise HTTPException(409, "document catalog is inconsistent")
             replica = session.scalar(
@@ -788,10 +968,24 @@ def _catalog_record(
                     DocumentReplica.status == "healthy",
                 )
             )
-            for value in (document, version, school, replica, document_type):
+            for value in (
+                document,
+                version,
+                school,
+                replica,
+                document_type,
+                *subjects,
+            ):
                 if value is not None:
                     session.expunge(value)
-            return CatalogRecord(document, version, school, replica, document_type)
+            return CatalogRecord(
+                document,
+                version,
+                school,
+                replica,
+                document_type,
+                subjects,
+            )
     except HTTPException:
         raise
     except SQLAlchemyError as error:
@@ -815,6 +1009,7 @@ def _metadata_from_catalog(record: CatalogRecord) -> DocumentMetadata:
         document_type_name=(
             record.document_type.name if record.document_type else None
         ),
+        subjects=_subject_summaries(record.subjects),
         version_id=version.id,
         version_number=version.version_number,
         version_status=version.status,

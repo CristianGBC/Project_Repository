@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.api import documents_router, router
+from backend.app.api import documents_router, router, subjects_router
 from backend.app.config import CoordinatorSettings, load_settings
 from backend.app.database import create_database_engine, create_session_factory
 
@@ -50,6 +50,7 @@ def create_app(
     )
     application.include_router(router)
     application.include_router(documents_router)
+    application.include_router(subjects_router)
     return application
 
 

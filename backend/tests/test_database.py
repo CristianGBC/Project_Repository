@@ -18,15 +18,17 @@ EXPECTED_TABLES = {
     "users",
     "school_memberships",
     "documents",
+    "document_subjects",
     "document_types",
     "document_versions",
     "physical_hosts",
     "storage_nodes",
+    "subjects",
     "document_replicas",
 }
 
 
-def test_model_metadata_declares_the_nine_catalog_tables() -> None:
+def test_model_metadata_declares_the_eleven_catalog_tables() -> None:
     assert set(Base.metadata.tables) == EXPECTED_TABLES
 
 
@@ -54,6 +56,15 @@ def database_engine():
     alembic_config = Config(str(backend_dir / "alembic.ini"))
     command.upgrade(alembic_config, "head")
     engine = create_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "TRUNCATE TABLE document_replicas, document_subjects, "
+                "document_versions, documents, subjects, school_memberships, "
+                "storage_nodes, physical_hosts, document_types, users, schools "
+                "CASCADE"
+            )
+        )
     try:
         yield engine
     finally:
@@ -105,7 +116,7 @@ def catalog_ids(database_engine):
     }
 
 
-def test_migration_creates_the_nine_catalog_tables(database_engine) -> None:
+def test_migration_creates_the_eleven_catalog_tables(database_engine) -> None:
     tables = set(inspect(database_engine).get_table_names())
     assert EXPECTED_TABLES <= tables
 

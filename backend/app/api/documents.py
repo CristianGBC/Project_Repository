@@ -1,6 +1,8 @@
 """Public document endpoints exposed by the coordinator."""
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from uuid import UUID
+
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 import httpx
 
@@ -8,6 +10,8 @@ from backend.app.config import CoordinatorSettings
 from backend.app.schemas import (
     DocumentLifecycleResponse,
     DocumentMetadata,
+    DocumentSubjectsResponse,
+    DocumentSubjectsUpdate,
     DocumentVersionHistory,
     StoredDocumentResponse,
 )
@@ -16,6 +20,8 @@ from backend.app.services.document_service import (
     download_document_version,
     get_document_metadata,
     get_document_versions,
+    list_documents,
+    replace_document_subjects,
     restore_document,
     soft_delete_document,
     upload_document,
@@ -23,6 +29,21 @@ from backend.app.services.document_service import (
 )
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+@router.get("", response_model=list[DocumentMetadata])
+async def search_documents(
+    request: Request,
+    school_id: str | None = Query(None),
+    subject_id: UUID | None = Query(None),
+    document_type_id: str | None = Query(None),
+) -> list[DocumentMetadata]:
+    return list_documents(
+        request.app.state.session_factory,
+        school_id,
+        subject_id,
+        document_type_id,
+    )
 
 
 @router.post("", response_model=StoredDocumentResponse, status_code=201)
@@ -33,6 +54,7 @@ async def create_document(
     title: str | None = Form(None),
     description: str | None = Form(None),
     document_type_id: str | None = Form(None),
+    subject_ids: list[UUID] | None = Form(None),
 ) -> StoredDocumentResponse:
     client: httpx.AsyncClient = request.app.state.http_client
     settings: CoordinatorSettings = request.app.state.settings
@@ -45,6 +67,23 @@ async def create_document(
         title,
         description,
         document_type_id,
+        subject_ids,
+    )
+
+
+@router.put(
+    "/{document_id}/subjects",
+    response_model=DocumentSubjectsResponse,
+)
+def update_document_subjects(
+    request: Request,
+    document_id: str,
+    payload: DocumentSubjectsUpdate,
+) -> DocumentSubjectsResponse:
+    return replace_document_subjects(
+        request.app.state.session_factory,
+        document_id,
+        payload.subject_ids,
     )
 
 

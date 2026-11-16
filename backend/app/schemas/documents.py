@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.app.schemas.subjects import SubjectSummary
+
 
 class DocumentMetadata(BaseModel):
     """Persistent metadata for one immutable document."""
@@ -24,6 +26,7 @@ class DocumentMetadata(BaseModel):
     description: str | None = None
     document_type_id: str | None = None
     document_type_name: str | None = None
+    subjects: list[SubjectSummary] = Field(default_factory=list)
     version_id: UUID | None = None
     version_number: int | None = None
     version_status: Literal["pending", "available", "failed"] | None = None

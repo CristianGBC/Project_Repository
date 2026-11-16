@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CHAR,
     CheckConstraint,
+    Column,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Integer,
     SmallInteger,
     String,
+    Table,
     Text,
     UniqueConstraint,
     func,
@@ -91,8 +93,53 @@ class DocumentType(Base):
     id: Mapped[str] = mapped_column(String(30), primary_key=True)
     code: Mapped[str] = mapped_column(String(30), unique=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
+    requires_subject: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false")
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
+
+
+document_subjects = Table(
+    "document_subjects",
+    Base.metadata,
+    Column(
+        "document_id",
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("documents.id"),
+        primary_key=True,
+    ),
+    Column(
+        "subject_id",
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("subjects.id"),
+        primary_key=True,
+    ),
+    Index("ix_document_subjects_subject_id", "subject_id"),
+)
+
+
+class Subject(Base):
+    __tablename__ = "subjects"
+    __table_args__ = (
+        UniqueConstraint("school_id", "code", name="uq_subject_school_code"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    school_id: Mapped[str] = mapped_column(ForeignKey("schools.id"), index=True)
+    code: Mapped[str] = mapped_column(String(30))
+    name: Mapped[str] = mapped_column(String(150))
+    description: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
+
+    school: Mapped[School] = relationship()
+    documents: Mapped[list["Document"]] = relationship(
+        secondary=document_subjects,
+        back_populates="subjects",
+    )
 
 
 class Document(Base):
@@ -137,6 +184,10 @@ class Document(Base):
 
     school: Mapped[School] = relationship()
     document_type: Mapped[DocumentType | None] = relationship()
+    subjects: Mapped[list[Subject]] = relationship(
+        secondary=document_subjects,
+        back_populates="documents",
+    )
 
 
 class DocumentVersion(Base):

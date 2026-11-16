@@ -15,6 +15,8 @@ stage does not add failover, RF=3, login, or automatic legacy import.
 | `users` | Future identities; email uniqueness is enforced on `lower(email)`. |
 | `school_memberships` | School affiliation and system role as separate fields. |
 | `document_types` | Extensible semantic classifications for documents. |
+| `subjects` | Academic subjects scoped to one school. |
+| `document_subjects` | Many-to-many associations between documents and subjects. |
 | `documents` | Logical documents, type, visibility, current version, and soft deletion. |
 | `document_versions` | Immutable version metadata and SHA-256 integrity data. |
 | `physical_hosts` | Physical Raspberry Pi devices, without hard-coded IP addresses. |
