@@ -8,6 +8,15 @@ from backend.app.schemas.documents import (
     StoredDocumentResponse,
 )
 from backend.app.schemas.nodes import CoordinatorHealth, NodeStatus, NodesResponse
+from backend.app.schemas.subjects import (
+    DocumentSubjectsResponse,
+    DocumentSubjectsUpdate,
+    SubjectCreate,
+    SubjectDocumentSummary,
+    SubjectResponse,
+    SubjectSummary,
+    SubjectUpdate,
+)
 
 __all__ = [
     "CoordinatorHealth",
@@ -15,7 +24,14 @@ __all__ = [
     "DocumentLifecycleResponse",
     "DocumentVersionHistory",
     "DocumentVersionSummary",
+    "DocumentSubjectsResponse",
+    "DocumentSubjectsUpdate",
     "NodeStatus",
     "NodesResponse",
     "StoredDocumentResponse",
+    "SubjectCreate",
+    "SubjectDocumentSummary",
+    "SubjectResponse",
+    "SubjectSummary",
+    "SubjectUpdate",
 ]

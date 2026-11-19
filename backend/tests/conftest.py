@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 
 from fastapi import FastAPI
 import httpx
@@ -50,11 +51,17 @@ def coordinator_request(
     """Run one coordinator request with an isolated outgoing transport."""
 
     async def request() -> httpx.Response:
+        coordinator_settings = settings or load_settings()
+        if session_factory is None:
+            coordinator_settings = replace(
+                coordinator_settings,
+                database_url=None,
+            )
         async with httpx.AsyncClient(
             transport=httpx.MockTransport(handler)
         ) as outgoing_client:
             application = create_app(
-                settings=settings or load_settings(),
+                settings=coordinator_settings,
                 http_client=outgoing_client,
                 session_factory=session_factory,
             )

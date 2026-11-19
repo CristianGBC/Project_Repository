@@ -8,17 +8,29 @@ from backend.app.database import create_database_engine, create_session_factory
 from backend.app.models import DocumentType, PhysicalHost, School, StorageNode
 
 DOCUMENT_TYPES = (
-    {"id": "article", "code": "article", "name": "Artículo"},
+    {
+        "id": "article",
+        "code": "article",
+        "name": "Artículo",
+        "requires_subject": False,
+    },
     {
         "id": "study_material",
         "code": "study_material",
         "name": "Material de estudio",
+        "requires_subject": True,
     },
-    {"id": "syllabus", "code": "syllabus", "name": "Syllabus"},
+    {
+        "id": "syllabus",
+        "code": "syllabus",
+        "name": "Syllabus",
+        "requires_subject": True,
+    },
     {
         "id": "administrative",
         "code": "administrative",
         "name": "Documento administrativo",
+        "requires_subject": False,
     },
 )
 
