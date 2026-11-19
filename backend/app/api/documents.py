@@ -1,10 +1,12 @@
 """Public document endpoints exposed by the coordinator."""
 
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 import httpx
+from pydantic import BeforeValidator
 
 from backend.app.config import CoordinatorSettings
 from backend.app.schemas import (
@@ -31,6 +33,23 @@ from backend.app.services.document_service import (
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
+def _normalize_subject_ids(value: object) -> object:
+    """Treat Swagger's empty multipart item as an omitted subject list."""
+
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [subject_id for subject_id in value if subject_id != ""]
+    return value
+
+
+DocumentSubjectIdsForm = Annotated[
+    list[UUID],
+    BeforeValidator(_normalize_subject_ids),
+    Form(default_factory=list),
+]
+
+
 @router.get("", response_model=list[DocumentMetadata])
 async def search_documents(
     request: Request,
@@ -46,15 +65,34 @@ async def search_documents(
     )
 
 
-@router.post("", response_model=StoredDocumentResponse, status_code=201)
+@router.post(
+    "",
+    response_model=StoredDocumentResponse,
+    status_code=201,
+    responses={
+        201: {"description": "Document stored successfully"},
+        400: {"description": "Invalid school, document type, or subject selection"},
+        422: {
+            "description": "Invalid multipart form data",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "$ref": "#/components/schemas/HTTPValidationError",
+                    }
+                }
+            },
+        },
+        503: {"description": "Document catalog or storage node unavailable"},
+    },
+)
 async def create_document(
     request: Request,
+    subject_ids: DocumentSubjectIdsForm,
     file: UploadFile = File(...),
     school_id: str = Form(...),
     title: str | None = Form(None),
     description: str | None = Form(None),
     document_type_id: str | None = Form(None),
-    subject_ids: list[UUID] | None = Form(None),
 ) -> StoredDocumentResponse:
     client: httpx.AsyncClient = request.app.state.http_client
     settings: CoordinatorSettings = request.app.state.settings
