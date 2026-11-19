@@ -10,6 +10,7 @@ import httpx
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.app.config import load_settings
+from backend.app.main import create_app
 from backend.tests.conftest import coordinator_request
 
 MATH_SCHOOL = "Escuela de Ciencias Matemáticas y Computacionales"
@@ -76,6 +77,42 @@ def upload_through_coordinator(handler, content: bytes, filename: str = "tesis.p
         data={"school_id": "node-math"},
         files={"file": (filename, content, "application/pdf")},
     )
+
+
+def test_upload_rejects_nonempty_invalid_subject_uuid() -> None:
+    def unexpected_request(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"Unexpected storage request to {request.url}")
+
+    response = coordinator_request(
+        unexpected_request,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "node-math",
+            "subject_ids": "not-a-uuid",
+        },
+        files={"file": ("article.pdf", b"article", "application/pdf")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "subject_ids", 0]
+
+
+def test_upload_openapi_documents_real_responses_and_uuid_array() -> None:
+    schema = create_app().openapi()
+    operation = schema["paths"]["/documents"]["post"]
+
+    assert set(operation["responses"]) == {"201", "400", "422", "503"}
+    request_schema_name = operation["requestBody"]["content"]["multipart/form-data"][
+        "schema"
+    ]["$ref"].rsplit("/", 1)[-1]
+    request_schema = schema["components"]["schemas"][request_schema_name]
+    assert request_schema["properties"]["subject_ids"] == {
+        "items": {"type": "string", "format": "uuid"},
+        "type": "array",
+        "title": "Subject Ids",
+    }
+    assert "subject_ids" not in request_schema["required"]
 
 
 def test_complete_upload_metadata_and_download_flow(tmp_path: Path) -> None:

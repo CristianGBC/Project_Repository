@@ -531,7 +531,7 @@ def test_upload_subject_rules_and_many_to_many_persistence(
         data={
             "school_id": "school-math",
             "document_type_id": "study_material",
-            "subject_ids": [algebra["id"], calculus["id"]],
+            "subject_ids": ["", algebra["id"], calculus["id"]],
         },
         files={"file": ("material.pdf", b"material", "application/pdf")},
     )
@@ -565,6 +565,60 @@ def test_upload_subject_rules_and_many_to_many_persistence(
             algebra["id"],
             calculus["id"],
         }
+
+
+@pytest.mark.parametrize("document_type_id", ["article", "administrative"])
+def test_upload_optional_subject_type_accepts_swagger_blank_value(
+    catalog_session_factory,
+    document_type_id: str,
+) -> None:
+    handler = memory_storage_handler()
+    response = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "school-math",
+            "document_type_id": document_type_id,
+            "subject_ids": "",
+        },
+        files={
+            "file": (
+                f"{document_type_id}-{uuid4()}.pdf",
+                b"optional subject",
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["subjects"] == []
+
+
+@pytest.mark.parametrize("document_type_id", ["syllabus", "study_material"])
+def test_upload_required_subject_type_rejects_swagger_blank_value(
+    catalog_session_factory,
+    document_type_id: str,
+) -> None:
+    def unexpected_request(request):
+        raise AssertionError(f"Unexpected storage request to {request.url}")
+
+    response = _request(
+        unexpected_request,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        data={
+            "school_id": "school-math",
+            "document_type_id": document_type_id,
+            "subject_ids": "",
+        },
+        files={"file": ("required.pdf", b"required subject", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "document type requires at least one subject"
 
 
 def test_upload_rejects_inactive_or_other_school_subject(
