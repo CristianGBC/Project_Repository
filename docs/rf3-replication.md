@@ -70,9 +70,11 @@ verifica nuevamente tamaño y SHA-256. Si una copia falla, intenta la siguiente
 automáticamente como se explica en
 [`read-failover.md`](read-failover.md). El monitoreo periódico está disponible
 mediante el proceso descrito en
-[`health-monitoring.md`](health-monitoring.md), pero no modifica ni reconstruye
-réplicas. Todavía no existen reparación, reintentos persistentes ni
-recuperación automática. PostgreSQL sigue siendo un punto único de fallo.
+[`health-monitoring.md`](health-monitoring.md). La restauración del factor
+objetivo y la preferencia por el nodo de origen se describen en
+[`replica-repair.md`](replica-repair.md). Todavía no existe reconciliación
+general de subidas iniciales fallidas y PostgreSQL sigue siendo un punto único
+de fallo.
 
 ## Prueba automatizada
 

@@ -14,6 +14,7 @@ def test_compose_declares_independent_profiles() -> None:
     assert "profiles:\n    - storage" in COMPOSE_TEXT
     assert "depends_on:" not in COMPOSE_TEXT
     assert "profiles:\n      - monitor" in COMPOSE_TEXT
+    assert "profiles:\n      - repair" in COMPOSE_TEXT
 
 
 def test_compose_publishes_exact_storage_ports() -> None:
@@ -36,3 +37,5 @@ def test_compose_passes_configurable_urls_to_coordinator() -> None:
     assert "HEALTH_CHECK_TIMEOUT_SECONDS: ${HEALTH_CHECK_TIMEOUT_SECONDS:-2}" in COMPOSE_TEXT
     assert "HEALTH_FAILURE_THRESHOLD: ${HEALTH_FAILURE_THRESHOLD:-3}" in COMPOSE_TEXT
     assert "HEALTH_RECOVERY_THRESHOLD: ${HEALTH_RECOVERY_THRESHOLD:-2}" in COMPOSE_TEXT
+    assert "REPAIR_DOWN_GRACE_SECONDS: ${REPAIR_DOWN_GRACE_SECONDS:-60}" in COMPOSE_TEXT
+    assert "REPAIR_MAX_CONCURRENT_JOBS: ${REPAIR_MAX_CONCURRENT_JOBS:-2}" in COMPOSE_TEXT

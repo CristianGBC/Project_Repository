@@ -255,6 +255,9 @@ class StorageNode(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     health: Mapped[str] = mapped_column(String(20), server_default=text("'unknown'"))
     last_seen_at: Mapped[datetime | None] = mapped_column(timestamp)
+    health_changed_at: Mapped[datetime] = mapped_column(
+        timestamp, server_default=func.now()
+    )
     created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
 
 
@@ -293,3 +296,4 @@ class DocumentReplica(Base):
     created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
     stored_at: Mapped[datetime | None] = mapped_column(timestamp)
     verified_at: Mapped[datetime | None] = mapped_column(timestamp)
+    repair_after: Mapped[datetime | None] = mapped_column(timestamp)

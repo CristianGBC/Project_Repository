@@ -19,8 +19,38 @@ x-storage-common: &storage-common
 x-storage-environment: &storage-environment
   DATA_ROOT: /data
   MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
+  REPAIR_INTERNAL_TOKEN: ${REPAIR_INTERNAL_TOKEN:-!development-repair-token!}
 
 services:
+  replica-repair:
+    profiles:
+      - repair
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.coordinator
+    command:
+      - python
+      - -m
+      - backend.repair.main
+    restart: unless-stopped
+    environment:
+      NODE_BIO_URL: ${NODE_BIO_URL:-http://node-bio:8000}
+      NODE_PHY_URL: ${NODE_PHY_URL:-http://node-phy:8000}
+      NODE_MATH_URL: ${NODE_MATH_URL:-http://node-math:8000}
+      NODE_CHEM_URL: ${NODE_CHEM_URL:-http://node-chem:8000}
+      NODE_EARTH_URL: ${NODE_EARTH_URL:-http://node-earth:8000}
+      NODE_AGRO_URL: ${NODE_AGRO_URL:-http://node-agro:8000}
+      DATABASE_URL: ${DATABASE_URL:-}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
+      REPAIR_ENABLED: ${REPAIR_ENABLED:-true}
+      REPAIR_INTERVAL_SECONDS: ${REPAIR_INTERVAL_SECONDS:-10}
+      REPAIR_DOWN_GRACE_SECONDS: ${REPAIR_DOWN_GRACE_SECONDS:-60}
+      REPAIR_MAX_CONCURRENT_JOBS: ${REPAIR_MAX_CONCURRENT_JOBS:-2}
+      REPAIR_TRANSFER_TIMEOUT_SECONDS: ${REPAIR_TRANSFER_TIMEOUT_SECONDS:-120}
+      REPAIR_RETRY_BACKOFF_SECONDS: ${REPAIR_RETRY_BACKOFF_SECONDS:-30}
+      REPAIR_EXCESS_CLEANUP_ENABLED: ${REPAIR_EXCESS_CLEANUP_ENABLED:-true}
+      REPAIR_INTERNAL_TOKEN: ${REPAIR_INTERNAL_TOKEN:-!development-repair-token!}
+
   health-monitor:
     profiles:
       - monitor

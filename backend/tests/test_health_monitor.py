@@ -138,6 +138,9 @@ def test_failure_and_recovery_thresholds_are_independent_per_node(
             assert node_state(monitor_session_factory, "node-math").health == "up"
             await monitor.check_cycle()
             assert node_state(monitor_session_factory, "node-math").health == "down"
+            down_changed_at = node_state(
+                monitor_session_factory, "node-math"
+            ).health_changed_at
             assert node_state(monitor_session_factory, "node-bio").health == "up"
 
             failing = False
@@ -145,6 +148,10 @@ def test_failure_and_recovery_thresholds_are_independent_per_node(
             assert node_state(monitor_session_factory, "node-math").health == "down"
             await monitor.check_cycle()
             assert node_state(monitor_session_factory, "node-math").health == "up"
+            assert (
+                node_state(monitor_session_factory, "node-math").health_changed_at
+                >= down_changed_at
+            )
 
     asyncio.run(scenario())
 
