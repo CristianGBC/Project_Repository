@@ -70,6 +70,30 @@ services:
       retries: 15
       start_period: 3s
 
+  health-monitor-test:
+    profiles:
+      - monitor
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.coordinator
+    command:
+      - python
+      - -m
+      - backend.monitor.main
+    restart: unless-stopped
+    environment:
+      NODE_BIO_URL: http://node-bio-test:8000
+      NODE_PHY_URL: http://node-phy-test:8000
+      NODE_MATH_URL: http://node-math-test:8000
+      NODE_CHEM_URL: http://node-chem-test:8000
+      NODE_EARTH_URL: http://node-earth-test:8000
+      NODE_AGRO_URL: http://node-agro-test:8000
+      DATABASE_URL: postgresql+psycopg://yachayrepo_rf3_test:yachayrepo_rf3_test@postgres-test:5432/yachayrepo_rf3_test
+      HEALTH_CHECK_INTERVAL_SECONDS: 1
+      HEALTH_CHECK_TIMEOUT_SECONDS: 0.5
+      HEALTH_FAILURE_THRESHOLD: 3
+      HEALTH_RECOVERY_THRESHOLD: 2
+
   node-bio-test:
     <<: *storage-common
     environment:

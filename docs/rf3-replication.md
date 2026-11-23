@@ -68,9 +68,11 @@ usan el UUID de la versión, por lo que nunca sobrescriben contenido anterior.
 La descarga ordena las réplicas `healthy`, prioriza el nodo de la escuela y
 verifica nuevamente tamaño y SHA-256. Si una copia falla, intenta la siguiente
 automáticamente como se explica en
-[`read-failover.md`](read-failover.md). Todavía no incluye monitoreo, reparación,
-reintentos persistentes ni recuperación automática. PostgreSQL sigue siendo un
-punto único de fallo.
+[`read-failover.md`](read-failover.md). El monitoreo periódico está disponible
+mediante el proceso descrito en
+[`health-monitoring.md`](health-monitoring.md), pero no modifica ni reconstruye
+réplicas. Todavía no existen reparación, reintentos persistentes ni
+recuperación automática. PostgreSQL sigue siendo un punto único de fallo.
 
 ## Prueba automatizada
 

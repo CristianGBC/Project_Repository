@@ -21,6 +21,30 @@ x-storage-environment: &storage-environment
   MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
 
 services:
+  health-monitor:
+    profiles:
+      - monitor
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.coordinator
+    command:
+      - python
+      - -m
+      - backend.monitor.main
+    restart: unless-stopped
+    environment:
+      NODE_BIO_URL: ${NODE_BIO_URL:-http://node-bio:8000}
+      NODE_PHY_URL: ${NODE_PHY_URL:-http://node-phy:8000}
+      NODE_MATH_URL: ${NODE_MATH_URL:-http://node-math:8000}
+      NODE_CHEM_URL: ${NODE_CHEM_URL:-http://node-chem:8000}
+      NODE_EARTH_URL: ${NODE_EARTH_URL:-http://node-earth:8000}
+      NODE_AGRO_URL: ${NODE_AGRO_URL:-http://node-agro:8000}
+      DATABASE_URL: ${DATABASE_URL:-}
+      HEALTH_CHECK_INTERVAL_SECONDS: ${HEALTH_CHECK_INTERVAL_SECONDS:-5}
+      HEALTH_CHECK_TIMEOUT_SECONDS: ${HEALTH_CHECK_TIMEOUT_SECONDS:-2}
+      HEALTH_FAILURE_THRESHOLD: ${HEALTH_FAILURE_THRESHOLD:-3}
+      HEALTH_RECOVERY_THRESHOLD: ${HEALTH_RECOVERY_THRESHOLD:-2}
+
   coordinator:
     profiles:
       - coordinator
