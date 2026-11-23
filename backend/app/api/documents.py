@@ -34,12 +34,22 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 def _normalize_subject_ids(value: object) -> object:
-    """Treat Swagger's empty multipart item as an omitted subject list."""
+    """Normalize repeated and comma-separated multipart subject identifiers."""
 
     if value is None or value == "":
         return []
     if isinstance(value, list):
-        return [subject_id for subject_id in value if subject_id != ""]
+        normalized: list[object] = []
+        for subject_id in value:
+            if isinstance(subject_id, str):
+                normalized.extend(
+                    item.strip() for item in subject_id.split(",") if item.strip()
+                )
+            else:
+                normalized.append(subject_id)
+        return normalized
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
     return value
 
 

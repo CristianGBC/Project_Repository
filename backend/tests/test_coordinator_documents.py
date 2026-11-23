@@ -83,19 +83,28 @@ def test_upload_rejects_nonempty_invalid_subject_uuid() -> None:
     def unexpected_request(request: httpx.Request) -> httpx.Response:
         raise AssertionError(f"Unexpected storage request to {request.url}")
 
-    response = coordinator_request(
-        unexpected_request,
-        "/documents",
-        method="POST",
-        data={
-            "school_id": "node-math",
-            "subject_ids": "not-a-uuid",
-        },
-        files={"file": ("article.pdf", b"article", "application/pdf")},
+    invalid_values = (
+        ("not-a-uuid", 0),
+        ("123e4567-e89b-12d3-a456-426614174000,not-a-uuid", 1),
     )
+    for subject_ids, invalid_index in invalid_values:
+        response = coordinator_request(
+            unexpected_request,
+            "/documents",
+            method="POST",
+            data={
+                "school_id": "node-math",
+                "subject_ids": subject_ids,
+            },
+            files={"file": ("article.pdf", b"article", "application/pdf")},
+        )
 
-    assert response.status_code == 422
-    assert response.json()["detail"][0]["loc"] == ["body", "subject_ids", 0]
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == [
+            "body",
+            "subject_ids",
+            invalid_index,
+        ]
 
 
 def test_upload_openapi_documents_real_responses_and_uuid_array() -> None:

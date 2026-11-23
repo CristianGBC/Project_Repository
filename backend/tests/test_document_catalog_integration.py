@@ -1,6 +1,8 @@
 """Stage 4.3/4.4 tests using an explicitly isolated PostgreSQL database."""
 
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 import hashlib
 import os
 from pathlib import Path
@@ -10,6 +12,7 @@ from alembic import command
 from alembic.config import Config
 import pytest
 from sqlalchemy import create_engine, select
+import httpx
 
 from backend.app.config import load_settings
 from backend.app.database import create_session_factory
@@ -18,12 +21,16 @@ from backend.app.models import (
     DocumentReplica,
     DocumentType,
     DocumentVersion,
+    StorageNode,
     Subject,
     User,
 )
 from backend.app.seed import seed_initial_catalog
 from backend.tests.conftest import coordinator_request
-from backend.tests.test_coordinator_documents import memory_storage_handler
+from backend.tests.test_coordinator_documents import (
+    memory_storage_handler,
+    parse_multipart_request,
+)
 
 
 @pytest.fixture(scope="module")
@@ -45,15 +52,96 @@ def catalog_session_factory():
         engine.dispose()
 
 
-def _request(handler, session_factory, path, method="GET", **kwargs):
+def _request(
+    handler,
+    session_factory,
+    path,
+    method="GET",
+    replication_factor=1,
+    settings=None,
+    **kwargs,
+):
     return coordinator_request(
         handler,
         path,
-        settings=load_settings(),
+        settings=settings
+        or replace(load_settings(), replication_factor=replication_factor),
         method=method,
         session_factory=session_factory,
         **kwargs,
     )
+
+
+def replicated_storage_handler(failing_host: str | None = None):
+    records: dict[tuple[str, str], tuple[dict, bytes]] = {}
+    transfer_started = 0
+    active_transfers = 0
+    max_active_transfers = 0
+    pending_snapshots: list[tuple[int, str]] = []
+    session_factory = None
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal transfer_started, active_transfers, max_active_transfers
+        host = request.url.host
+        document_id = request.url.path.strip("/").split("/")[1]
+        key = (host, document_id)
+        if request.method == "PUT":
+            fields, content = await parse_multipart_request(request)
+            transfer_started += 1
+            active_transfers += 1
+            max_active_transfers = max(max_active_transfers, active_transfers)
+            if session_factory is not None:
+                with session_factory() as session:
+                    version = session.scalar(
+                        select(DocumentVersion).where(
+                            DocumentVersion.sha256 == fields["sha256"],
+                            DocumentVersion.size_bytes == int(fields["size_bytes"]),
+                        ).order_by(DocumentVersion.created_at.desc())
+                    )
+                    replicas = session.scalars(
+                        select(DocumentReplica).where(
+                            DocumentReplica.version_id == version.id
+                        )
+                    ).all()
+                    pending_snapshots.append(
+                        (
+                            sum(replica.status == "pending" for replica in replicas),
+                            version.status,
+                        )
+                    )
+            await asyncio.sleep(0.01)
+            active_transfers -= 1
+            if host == failing_host:
+                raise httpx.ConnectError("simulated failure", request=request)
+            metadata = {
+                "document_id": document_id,
+                "filename": fields["filename"],
+                "school_id": fields["school_id"],
+                "school": fields["school"],
+                "size_bytes": int(fields["size_bytes"]),
+                "sha256": fields["sha256"],
+                "created_at": fields["created_at"],
+                "node_id": fields["school_id"],
+            }
+            records[key] = (metadata, content)
+            return httpx.Response(201, json={**metadata, "status": "stored"})
+        if key not in records:
+            return httpx.Response(404, json={"detail": "document does not exist"})
+        metadata, content = records[key]
+        if request.url.path.endswith("/metadata"):
+            return httpx.Response(200, json=metadata)
+        return httpx.Response(200, content=content)
+
+    handler.records = records
+    handler.pending_snapshots = pending_snapshots
+
+    def attach(value):
+        nonlocal session_factory
+        session_factory = value
+
+    handler.attach = attach
+    handler.stats = lambda: (transfer_started, max_active_transfers)
+    return handler
 
 
 def _create_subject(session_factory, code: str, name: str | None = None) -> dict:
@@ -152,6 +240,271 @@ def test_seed_registers_document_types_and_upload_rejects_unknown_type(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "unknown or inactive document_type_id"
+
+
+def test_rf3_stores_three_verified_replicas_on_distinct_catalog_hosts(
+    catalog_session_factory,
+) -> None:
+    content = f"rf3-success-{uuid4()}".encode()
+    checksum = hashlib.sha256(content).hexdigest()
+    handler = replicated_storage_handler()
+    handler.attach(catalog_session_factory)
+
+    response = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        replication_factor=3,
+        data={"school_id": "school-math", "title": "RF3 success"},
+        files={"file": (f"rf3-{uuid4()}.txt", content, "text/plain")},
+    )
+
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    assert payload["target_replicas"] == 3
+    assert payload["node_id"] == "node-math"
+    assert payload["version_status"] == "available"
+    assert handler.stats() == (3, 3)
+    assert handler.pending_snapshots
+    assert set(handler.pending_snapshots) == {(3, "pending")}
+
+    with catalog_session_factory() as session:
+        version = session.get(DocumentVersion, payload["version_id"])
+        document = session.get(Document, payload["document_id"])
+        replicas = session.scalars(
+            select(DocumentReplica).where(DocumentReplica.version_id == version.id)
+        ).all()
+        node_hosts = {
+            node.id: node.physical_host_id
+            for node in session.scalars(select(StorageNode)).all()
+        }
+
+        assert version.status == "available"
+        assert version.target_replicas == 3
+        assert document.current_version_id == version.id
+        assert len(replicas) == 3
+        assert {replica.status for replica in replicas} == {"healthy"}
+        assert len({replica.node_id for replica in replicas}) == 3
+        assert len({replica.physical_host_id for replica in replicas}) == 3
+        selected_nodes = {replica.node_id for replica in replicas}
+        assert selected_nodes == {"node-math", "node-agro", "node-bio"}
+        assert not {"node-bio", "node-phy"} <= selected_nodes
+        assert not {"node-math", "node-chem"} <= selected_nodes
+        assert all(
+            node_hosts[replica.node_id] == replica.physical_host_id
+            for replica in replicas
+        )
+
+    stored = [
+        record
+        for (host, storage_id), record in handler.records.items()
+        if storage_id == payload["document_id"]
+    ]
+    assert len(stored) == 3
+    assert {stored_content for _, stored_content in stored} == {content}
+    assert {metadata["sha256"] for metadata, _ in stored} == {checksum}
+
+    downloaded = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/school-math/{payload['document_id']}/download",
+        replication_factor=3,
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content == content
+
+
+def test_rf3_rejects_upload_when_fewer_than_three_catalog_hosts_are_eligible(
+    catalog_session_factory,
+) -> None:
+    filename = f"insufficient-hosts-{uuid4()}.txt"
+    settings = replace(load_settings(), replication_factor=3)
+    settings = replace(
+        settings,
+        nodes=tuple(
+            node
+            for node in settings.nodes
+            if node.node_id in {"node-math", "node-chem"}
+        ),
+    )
+
+    def unexpected_request(request):
+        raise AssertionError(f"Unexpected transfer to {request.url}")
+
+    response = _request(
+        unexpected_request,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        settings=settings,
+        data={"school_id": "school-math"},
+        files={"file": (filename, b"not published", "text/plain")},
+    )
+
+    assert response.status_code == 503
+    assert "requires 3 eligible physical hosts; found 2" in response.json()["detail"]
+    with catalog_session_factory() as session:
+        assert session.scalar(
+            select(DocumentVersion).where(DocumentVersion.filename == filename)
+        ) is None
+
+
+def test_rf3_selection_uses_catalog_hosts_not_node_urls(
+    catalog_session_factory,
+) -> None:
+    settings = replace(load_settings(), replication_factor=3)
+    settings = replace(
+        settings,
+        nodes=tuple(
+            replace(node, url=f"http://arbitrary-location-{index}.invalid:9999")
+            for index, node in enumerate(settings.nodes)
+        ),
+    )
+    handler = replicated_storage_handler()
+    response = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        settings=settings,
+        data={"school_id": "school-math"},
+        files={
+            "file": (
+                f"catalog-topology-{uuid4()}.txt",
+                b"catalog topology",
+                "text/plain",
+            )
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert {host for host, _ in handler.records} == {
+        "arbitrary-location-0.invalid",
+        "arbitrary-location-2.invalid",
+        "arbitrary-location-5.invalid",
+    }
+    with catalog_session_factory() as session:
+        replicas = session.scalars(
+            select(DocumentReplica).where(
+                DocumentReplica.version_id == response.json()["version_id"]
+            )
+        ).all()
+        assert {replica.node_id for replica in replicas} == {
+            "node-math",
+            "node-agro",
+            "node-bio",
+        }
+        assert len({replica.physical_host_id for replica in replicas}) == 3
+
+
+def test_rf3_partial_failure_preserves_healthy_copies_and_previous_version(
+    catalog_session_factory,
+) -> None:
+    successful_handler = replicated_storage_handler()
+    first = _request(
+        successful_handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        replication_factor=3,
+        data={"school_id": "school-math", "title": "RF3 failure test"},
+        files={"file": ("rf3-v1.txt", b"available version", "text/plain")},
+    )
+    assert first.status_code == 201, first.text
+
+    failing_handler = replicated_storage_handler(failing_host="node-agro")
+    failed = _request(
+        failing_handler,
+        catalog_session_factory,
+        f"/documents/{first.json()['document_id']}/versions",
+        method="POST",
+        replication_factor=3,
+        files={"file": ("rf3-v2-failed.txt", b"partial version", "text/plain")},
+    )
+
+    assert failed.status_code == 503
+    with catalog_session_factory() as session:
+        document = session.get(Document, first.json()["document_id"])
+        versions = session.scalars(
+            select(DocumentVersion)
+            .where(DocumentVersion.document_id == document.id)
+            .order_by(DocumentVersion.version_number)
+        ).all()
+        failed_version = versions[1]
+        replicas = session.scalars(
+            select(DocumentReplica).where(
+                DocumentReplica.version_id == failed_version.id
+            )
+        ).all()
+
+        assert document.current_version_id == versions[0].id
+        assert versions[0].status == "available"
+        assert failed_version.status == "failed"
+        assert len(replicas) == 3
+        assert sorted(replica.status for replica in replicas) == [
+            "failed",
+            "healthy",
+            "healthy",
+        ]
+        assert next(
+            replica for replica in replicas if replica.status == "failed"
+        ).node_id == "node-agro"
+    assert len(failing_handler.records) == 2
+
+
+def test_concurrent_rf3_versions_remain_unique_and_fully_replicated(
+    catalog_session_factory,
+) -> None:
+    handler = replicated_storage_handler()
+    first = _request(
+        handler,
+        catalog_session_factory,
+        "/documents",
+        method="POST",
+        replication_factor=3,
+        data={"school_id": "school-math", "title": "Concurrent RF3"},
+        files={"file": ("concurrent-rf3-v1.txt", b"version 1", "text/plain")},
+    )
+    assert first.status_code == 201
+    document_id = first.json()["document_id"]
+
+    def upload(value: int):
+        return _request(
+            handler,
+            catalog_session_factory,
+            f"/documents/{document_id}/versions",
+            method="POST",
+            replication_factor=3,
+            files={
+                "file": (
+                    f"concurrent-rf3-{value}.txt",
+                    f"concurrent rf3 {value}".encode(),
+                    "text/plain",
+                )
+            },
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(upload, (2, 3)))
+
+    assert all(response.status_code == 201 for response in responses)
+    assert {response.json()["version_number"] for response in responses} == {2, 3}
+    with catalog_session_factory() as session:
+        versions = session.scalars(
+            select(DocumentVersion).where(DocumentVersion.document_id == document_id)
+        ).all()
+        assert {version.version_number for version in versions} == {1, 2, 3}
+        for version in versions:
+            replicas = session.scalars(
+                select(DocumentReplica).where(
+                    DocumentReplica.version_id == version.id
+                )
+            ).all()
+            assert version.status == "available"
+            assert len(replicas) == 3
+            assert {replica.status for replica in replicas} == {"healthy"}
+            assert len({replica.physical_host_id for replica in replicas}) == 3
 
 
 def test_metadata_survives_new_coordinator_and_download_uses_catalog_location(
@@ -565,6 +918,55 @@ def test_upload_subject_rules_and_many_to_many_persistence(
             algebra["id"],
             calculus["id"],
         }
+
+
+def test_upload_accepts_each_subject_ids_form_representation(
+    catalog_session_factory,
+) -> None:
+    suffix = uuid4().hex[:8]
+    first = _create_subject(catalog_session_factory, f"FORM1-{suffix}")
+    second = _create_subject(catalog_session_factory, f"FORM2-{suffix}")
+    handler = memory_storage_handler()
+    representations = (
+        ("single", first["id"], {first["id"]}),
+        ("repeated", [first["id"], second["id"]], {first["id"], second["id"]}),
+        (
+            "comma-separated",
+            f"{first['id']},{second['id']}",
+            {first["id"], second["id"]},
+        ),
+        (
+            "duplicates",
+            f"{first['id']}, {first['id']},{second['id']}",
+            {first["id"], second["id"]},
+        ),
+    )
+
+    for label, subject_ids, expected_ids in representations:
+        response = _request(
+            handler,
+            catalog_session_factory,
+            "/documents",
+            method="POST",
+            data={
+                "school_id": "school-math",
+                "document_type_id": "study_material",
+                "subject_ids": subject_ids,
+            },
+            files={
+                "file": (
+                    f"{label}-{uuid4()}.pdf",
+                    label.encode(),
+                    "application/pdf",
+                )
+            },
+        )
+
+        assert response.status_code == 201, response.text
+        assert {item["id"] for item in response.json()["subjects"]} == expected_ids
+        with catalog_session_factory() as session:
+            document = session.get(Document, response.json()["document_id"])
+            assert {str(subject.id) for subject in document.subjects} == expected_ids
 
 
 @pytest.mark.parametrize("document_type_id", ["article", "administrative"])

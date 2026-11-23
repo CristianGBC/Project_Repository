@@ -1,0 +1,146 @@
+name: yachayrepo-rf3-test
+
+x-storage-common: &storage-common
+  build:
+    context: ../..
+    dockerfile: infrastructure/docker/Dockerfile.storage
+  restart: unless-stopped
+  environment: &storage-environment
+    DATA_ROOT: /data
+    MAX_UPLOAD_SIZE_MB: 10
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"
+    interval: 2s
+    timeout: 3s
+    retries: 15
+    start_period: 3s
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: yachayrepo_rf3_test
+      POSTGRES_USER: yachayrepo_rf3_test
+      POSTGRES_PASSWORD: yachayrepo_rf3_test
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - postgres_rf3_test:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U yachayrepo_rf3_test -d yachayrepo_rf3_test
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
+
+  coordinator-test:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.coordinator
+    restart: unless-stopped
+    environment:
+      NODE_BIO_URL: http://node-bio-test:8000
+      NODE_PHY_URL: http://node-phy-test:8000
+      NODE_MATH_URL: http://node-math-test:8000
+      NODE_CHEM_URL: http://node-chem-test:8000
+      NODE_EARTH_URL: http://node-earth-test:8000
+      NODE_AGRO_URL: http://node-agro-test:8000
+      NODE_REQUEST_TIMEOUT_SECONDS: 2.0
+      DOCUMENT_TRANSFER_TIMEOUT_SECONDS: 30.0
+      MAX_UPLOAD_SIZE_MB: 10
+      REPLICATION_FACTOR: 3
+      DATABASE_URL: postgresql+psycopg://yachayrepo_rf3_test:yachayrepo_rf3_test@postgres-test:5432/yachayrepo_rf3_test
+    ports:
+      - "127.0.0.1:18000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
+
+  node-bio-test:
+    <<: *storage-common
+    environment:
+      <<: *storage-environment
+      NODE_ID: node-bio
+      SCHOOL_NAME: Escuela de Ciencias Biológicas e Ingeniería
+    ports:
+      - "127.0.0.1:18001:8000"
+    volumes:
+      - storage_bio_rf3_test:/data
+
+  node-phy-test:
+    <<: *storage-common
+    environment:
+      <<: *storage-environment
+      NODE_ID: node-phy
+      SCHOOL_NAME: Escuela de Ciencias Físicas y Nanotecnología
+    ports:
+      - "127.0.0.1:18002:8000"
+    volumes:
+      - storage_phy_rf3_test:/data
+
+  node-math-test:
+    <<: *storage-common
+    environment:
+      <<: *storage-environment
+      NODE_ID: node-math
+      SCHOOL_NAME: Escuela de Ciencias Matemáticas y Computacionales
+    ports:
+      - "127.0.0.1:18003:8000"
+    volumes:
+      - storage_math_rf3_test:/data
+
+  node-chem-test:
+    <<: *storage-common
+    environment:
+      <<: *storage-environment
+      NODE_ID: node-chem
+      SCHOOL_NAME: Escuela de Ciencias Químicas e Ingeniería
+    ports:
+      - "127.0.0.1:18004:8000"
+    volumes:
+      - storage_chem_rf3_test:/data
+
+  node-earth-test:
+    <<: *storage-common
+    environment:
+      <<: *storage-environment
+      NODE_ID: node-earth
+      SCHOOL_NAME: Escuela de Ciencias de la Tierra, Energía y Ambiente
+    ports:
+      - "127.0.0.1:18005:8000"
+    volumes:
+      - storage_earth_rf3_test:/data
+
+  node-agro-test:
+    <<: *storage-common
+    environment:
+      <<: *storage-environment
+      NODE_ID: node-agro
+      SCHOOL_NAME: Escuela de Ciencias Agropecuarias y Agroindustriales
+    ports:
+      - "127.0.0.1:18006:8000"
+    volumes:
+      - storage_agro_rf3_test:/data
+
+volumes:
+  postgres_rf3_test:
+  storage_bio_rf3_test:
+  storage_phy_rf3_test:
+  storage_math_rf3_test:
+  storage_chem_rf3_test:
+  storage_earth_rf3_test:
+  storage_agro_rf3_test:

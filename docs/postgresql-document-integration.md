@@ -1,5 +1,8 @@
 # PostgreSQL document integration (Stage 4.3)
 
+> This document explains the Stage 4.3 baseline. Synchronous RF=1/RF=3 writes
+> are documented in [`rf3-replication.md`](rf3-replication.md).
+
 The coordinator on Host A stores document bytes on the configured storage
 nodes and treats the PostgreSQL catalog on Host B as the primary metadata
 source. PostgreSQL never stores file contents. Existing per-node JSON remains
@@ -30,9 +33,8 @@ replaces it; this stage adds no login, JWT, or authentication endpoint.
 
 The API accepts transitional `node-math` and canonical `school-math` inputs.
 They are resolved explicitly; schools and nodes are never treated as the same
-entity. Selection considers active configured nodes not marked `down` and
-currently prefers the school's home node. It is not restricted to that node,
-so later RF=3 selection can spread replicas across physical hosts.
+entity. Selection considers active configured nodes and physical hosts, prefers
+the school's home node, and selects one node per physical host.
 
 ## Upload flow
 
@@ -44,14 +46,13 @@ is nullable for existing documents and clients.
 
 1. The coordinator validates and spools the file while calculating SHA-256.
 2. A short transaction validates the school, creates the technical user if
-   missing, and inserts a document, version 1 in `pending`, and one pending
-   replica. The application sets `target_replicas=1`; the schema default stays
-   at 3 for the future replication stage.
+   missing, and inserts a document, version 1 in `pending`, and one or three
+   pending replicas according to `REPLICATION_FACTOR`.
 3. The transaction commits before the HTTP upload begins.
-4. The node validates size and SHA-256 and atomically publishes bytes and JSON.
-5. A second short transaction marks the replica `healthy`, records storage and
-   verification times, marks the version `available`, and assigns the current
-   version.
+4. The selected nodes concurrently validate size and SHA-256 and atomically
+   publish bytes and JSON.
+5. Short transactions record each replica result. The version becomes
+   `available` and current only after every required replica is `healthy`.
 
 Confirmed versions are immutable. Stage 4.3 creates version 1; Stage 4.4 adds
 new-version and soft-delete operations documented in
@@ -133,7 +134,7 @@ Without `TEST_DATABASE_URL`, PostgreSQL cases skip and API/filesystem tests run.
 
 ## Current limitations
 
-- RF is fixed at 1; there is no repair worker or cross-host RF=3.
+- RF supports 1 and 3; there is no read failover or repair worker yet.
 - PostgreSQL remains a single point of failure.
 - Authentication, authorization, permanent purge, and automatic recovery are
   not implemented. Soft deletion and immutable later versions are available

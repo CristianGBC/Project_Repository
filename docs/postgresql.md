@@ -124,6 +124,10 @@ its stable, non-admin technical user on the first catalog-backed upload.
 
 ## Isolated database tests
 
+For a reproducible Docker-based PostgreSQL instance, migration validation,
+full-suite commands, and safe cleanup, see
+[`postgresql-testing.md`](postgresql-testing.md).
+
 Create a disposable database whose name ends in `_test`. Never reuse QA or the
 application database:
 

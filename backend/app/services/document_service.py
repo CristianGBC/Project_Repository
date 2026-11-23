@@ -5,6 +5,7 @@ replica is therefore also the durable reconciliation record for an interrupted
 operation.
 """
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -28,6 +29,7 @@ from backend.app.models import (
     DocumentReplica,
     DocumentType,
     DocumentVersion,
+    PhysicalHost,
     School,
     StorageNode,
     Subject,
@@ -45,7 +47,6 @@ from backend.app.schemas import (
 )
 
 CHUNK_SIZE = 1024 * 1024
-TARGET_REPLICAS = 1
 
 SCHOOL_TO_NODE = {
     "school-bio": "node-bio",
@@ -193,21 +194,38 @@ def _technical_user(session: Session, settings: CoordinatorSettings) -> User:
     return user
 
 
-def _select_storage_node(
+def _select_storage_nodes(
     session: Session, settings: CoordinatorSettings, school_id: str
-) -> StorageNode:
+) -> list[StorageNode]:
     configured_ids = {node.node_id for node in settings.nodes}
     candidates = session.scalars(
-        select(StorageNode).where(
+        select(StorageNode)
+        .join(PhysicalHost, PhysicalHost.id == StorageNode.physical_host_id)
+        .where(
             StorageNode.id.in_(configured_ids),
             StorageNode.is_active.is_(True),
             StorageNode.health != "down",
+            PhysicalHost.is_active.is_(True),
         )
     ).all()
     candidates.sort(key=lambda node: (node.home_school_id != school_id, node.id))
-    if not candidates:
-        raise HTTPException(503, "no storage node is available")
-    return candidates[0]
+    selected: list[StorageNode] = []
+    selected_hosts: set[str] = set()
+    for node in candidates:
+        if node.physical_host_id in selected_hosts:
+            continue
+        selected.append(node)
+        selected_hosts.add(node.physical_host_id)
+        if len(selected) == settings.replication_factor:
+            return selected
+    raise HTTPException(
+        503,
+        detail=(
+            f"replication factor {settings.replication_factor} requires "
+            f"{settings.replication_factor} eligible physical hosts; "
+            f"found {len(selected_hosts)}"
+        ),
+    )
 
 
 def _create_pending_catalog_records(
@@ -225,7 +243,7 @@ def _create_pending_catalog_records(
 ) -> tuple[
     Document,
     DocumentVersion,
-    DocumentReplica,
+    list[DocumentReplica],
     School,
     DocumentType | None,
     list[Subject],
@@ -244,7 +262,7 @@ def _create_pending_catalog_records(
             _validate_subject_requirement(document_type, subjects)
             user = _technical_user(session, settings)
             session.flush()
-            node = _select_storage_node(session, settings, school_id)
+            nodes = _select_storage_nodes(session, settings, school_id)
             document = Document(
                 id=uuid4(),
                 title=(title or Path(filename).stem)[:255],
@@ -263,17 +281,20 @@ def _create_pending_catalog_records(
                 size_bytes=size_bytes,
                 sha256=checksum,
                 status="pending",
-                target_replicas=TARGET_REPLICAS,
+                target_replicas=settings.replication_factor,
                 created_by=user.id,
             )
-            replica = DocumentReplica(
-                id=uuid4(),
-                version_id=version.id,
-                node_id=node.id,
-                physical_host_id=node.physical_host_id,
-                status="pending",
-                attempts=0,
-            )
+            replicas = [
+                DocumentReplica(
+                    id=uuid4(),
+                    version_id=version.id,
+                    node_id=node.id,
+                    physical_host_id=node.physical_host_id,
+                    status="pending",
+                    attempts=0,
+                )
+                for node in nodes
+            ]
             # The schema intentionally has a deferred circular reference from
             # documents back to its current version. Explicit phase flushes
             # make the initial forward FK ordering unambiguous to SQLAlchemy.
@@ -282,9 +303,9 @@ def _create_pending_catalog_records(
             session.flush()
             session.add(version)
             session.flush()
-            session.add(replica)
+            session.add_all(replicas)
             session.flush()
-            return document, version, replica, school, document_type, subjects
+            return document, version, replicas, school, document_type, subjects
     except HTTPException:
         raise
     except SQLAlchemyError as error:
@@ -314,9 +335,36 @@ def _record_failed_transfer(
 
 def _confirm_stored_replica(
     session_factory: sessionmaker[Session],
-    document_id: UUID,
     version_id: UUID,
     replica_id: UUID,
+) -> None:
+    now = datetime.now(timezone.utc)
+    try:
+        with session_factory.begin() as session:
+            version = session.get(DocumentVersion, version_id)
+            replica = session.get(DocumentReplica, replica_id)
+            if (
+                version is None
+                or replica is None
+                or replica.version_id != version.id
+            ):
+                raise RuntimeError("pending catalog operation disappeared")
+            replica.status = "healthy"
+            replica.attempts += 1
+            replica.stored_at = now
+            replica.verified_at = now
+            replica.last_error = None
+    except (SQLAlchemyError, RuntimeError) as error:
+        raise HTTPException(
+            503,
+            detail="file stored but replica confirmation is pending",
+        ) from error
+
+
+def _finalize_replicated_version(
+    session_factory: sessionmaker[Session],
+    document_id: UUID,
+    version_id: UUID,
 ) -> None:
     now = datetime.now(timezone.utc)
     try:
@@ -325,14 +373,21 @@ def _confirm_stored_replica(
                 select(Document).where(Document.id == document_id).with_for_update()
             )
             version = session.get(DocumentVersion, version_id)
-            replica = session.get(DocumentReplica, replica_id)
-            if document is None or version is None or replica is None:
+            if document is None or version is None or version.status != "pending":
                 raise RuntimeError("pending catalog operation disappeared")
-            replica.status = "healthy"
-            replica.attempts += 1
-            replica.stored_at = now
-            replica.verified_at = now
-            replica.last_error = None
+            replicas = session.scalars(
+                select(DocumentReplica)
+                .where(DocumentReplica.version_id == version.id)
+                .with_for_update()
+            ).all()
+            healthy = [replica for replica in replicas if replica.status == "healthy"]
+            distinct_hosts = {replica.physical_host_id for replica in healthy}
+            if (
+                len(replicas) != version.target_replicas
+                or len(healthy) != version.target_replicas
+                or len(distinct_hosts) != version.target_replicas
+            ):
+                raise RuntimeError("replication target has not been satisfied")
             version.status = "available"
             version.committed_at = now
             current_number = 0
@@ -351,6 +406,31 @@ def _confirm_stored_replica(
                 "document_id": str(document_id),
             },
         ) from error
+
+
+def _copy_prepared_files(
+    prepared_file: BinaryIO,
+    count: int,
+    max_size_bytes: int,
+) -> list[BinaryIO]:
+    """Create independent cursors so concurrent HTTP requests read identical bytes."""
+
+    copies: list[BinaryIO] = []
+    try:
+        for _ in range(count):
+            target = tempfile.SpooledTemporaryFile(
+                max_size=min(max_size_bytes, CHUNK_SIZE), mode="w+b"
+            )
+            prepared_file.seek(0)
+            while chunk := prepared_file.read(CHUNK_SIZE):
+                target.write(chunk)
+            target.seek(0)
+            copies.append(target)
+        return copies
+    except Exception:
+        for target in copies:
+            target.close()
+        raise
 
 
 def _storage_metadata(
@@ -412,6 +492,85 @@ async def _store_on_node(
     return stored
 
 
+async def _replicate_to_nodes(
+    client: httpx.AsyncClient,
+    settings: CoordinatorSettings,
+    upload: UploadFile,
+    prepared_file: BinaryIO,
+    session_factory: sessionmaker[Session],
+    document: Document,
+    version: DocumentVersion,
+    replicas: list[DocumentReplica],
+    storage_id: UUID,
+    filename: str,
+    size_bytes: int,
+    checksum: str,
+    created_at: datetime,
+) -> NodeSettings:
+    """Transfer one immutable version concurrently and persist every outcome."""
+
+    nodes = [configured_node(settings, replica.node_id) for replica in replicas]
+    prepared_copies = _copy_prepared_files(
+        prepared_file,
+        len(replicas),
+        settings.max_upload_size_bytes,
+    )
+
+    async def transfer(
+        node: NodeSettings,
+        prepared_copy: BinaryIO,
+    ) -> StoredDocumentResponse:
+        metadata = _storage_metadata(
+            storage_id,
+            filename,
+            node,
+            size_bytes,
+            checksum,
+            created_at,
+        )
+        return await _store_on_node(client, upload, prepared_copy, metadata, node)
+
+    try:
+        results = await asyncio.gather(
+            *(
+                transfer(node, prepared_copy)
+                for node, prepared_copy in zip(nodes, prepared_copies, strict=True)
+            ),
+            return_exceptions=True,
+        )
+    finally:
+        for prepared_copy in prepared_copies:
+            prepared_copy.close()
+
+    first_error: HTTPException | None = None
+    for replica, result in zip(replicas, results, strict=True):
+        if isinstance(result, BaseException):
+            if isinstance(result, HTTPException):
+                transfer_error = result
+            else:
+                transfer_error = HTTPException(503, "storage node is unavailable")
+            _record_failed_transfer(
+                session_factory,
+                version.id,
+                replica.id,
+                str(transfer_error.detail),
+            )
+            if first_error is None:
+                first_error = transfer_error
+            continue
+        try:
+            _confirm_stored_replica(session_factory, version.id, replica.id)
+        except HTTPException as error:
+            if first_error is None:
+                first_error = error
+
+    if first_error is not None:
+        raise first_error
+
+    _finalize_replicated_version(session_factory, document.id, version.id)
+    return nodes[0]
+
+
 async def _legacy_upload_document(
     client: httpx.AsyncClient,
     settings: CoordinatorSettings,
@@ -451,7 +610,7 @@ async def upload_document(
     size_bytes, checksum, prepared_file = await _measure_upload(
         upload, settings.max_upload_size_bytes
     )
-    document, version, replica, school, document_type, subjects = (
+    document, version, replicas, school, document_type, subjects = (
         _create_pending_catalog_records(
             session_factory,
             settings,
@@ -466,23 +625,26 @@ async def upload_document(
             subject_ids,
         )
     )
-    node = configured_node(settings, replica.node_id)
     created_at = document.created_at or datetime.now(timezone.utc)
-    metadata = _storage_metadata(
-        document.id, filename, node, size_bytes, checksum, created_at
-    )
     try:
-        try:
-            await _store_on_node(client, upload, prepared_file, metadata, node)
-        except HTTPException as error:
-            _record_failed_transfer(
-                session_factory, version.id, replica.id, str(error.detail)
-            )
-            raise
+        node = await _replicate_to_nodes(
+            client,
+            settings,
+            upload,
+            prepared_file,
+            session_factory,
+            document,
+            version,
+            replicas,
+            document.id,
+            filename,
+            size_bytes,
+            checksum,
+            created_at,
+        )
     finally:
         prepared_file.close()
 
-    _confirm_stored_replica(session_factory, document.id, version.id, replica.id)
     return StoredDocumentResponse(
         document_id=document.id,
         filename=filename,
@@ -501,7 +663,7 @@ async def upload_document(
         version_id=version.id,
         version_number=1,
         version_status="available",
-        target_replicas=TARGET_REPLICAS,
+        target_replicas=settings.replication_factor,
     )
 
 
@@ -523,7 +685,7 @@ def _create_pending_version(
 ) -> tuple[
     Document,
     DocumentVersion,
-    DocumentReplica,
+    list[DocumentReplica],
     School,
     DocumentType | None,
     list[Subject],
@@ -547,7 +709,7 @@ def _create_pending_version(
             )
             subjects = list(document.subjects)
             session.flush()
-            node = _select_storage_node(session, settings, document.school_id)
+            nodes = _select_storage_nodes(session, settings, document.school_id)
             latest_number = (
                 session.scalar(
                     select(func.max(DocumentVersion.version_number)).where(
@@ -565,22 +727,25 @@ def _create_pending_version(
                 size_bytes=size_bytes,
                 sha256=checksum,
                 status="pending",
-                target_replicas=TARGET_REPLICAS,
+                target_replicas=settings.replication_factor,
                 created_by=user.id,
             )
             session.add(version)
             session.flush()
-            replica = DocumentReplica(
-                id=uuid4(),
-                version_id=version.id,
-                node_id=node.id,
-                physical_host_id=node.physical_host_id,
-                status="pending",
-                attempts=0,
-            )
-            session.add(replica)
+            replicas = [
+                DocumentReplica(
+                    id=uuid4(),
+                    version_id=version.id,
+                    node_id=node.id,
+                    physical_host_id=node.physical_host_id,
+                    status="pending",
+                    attempts=0,
+                )
+                for node in nodes
+            ]
+            session.add_all(replicas)
             session.flush()
-            return document, version, replica, school, document_type, subjects
+            return document, version, replicas, school, document_type, subjects
     except HTTPException:
         raise
     except SQLAlchemyError as error:
@@ -600,7 +765,7 @@ async def upload_document_version(
     size_bytes, checksum, prepared_file = await _measure_upload(
         upload, settings.max_upload_size_bytes
     )
-    document, version, replica, school, document_type, subjects = (
+    document, version, replicas, school, document_type, subjects = (
         _create_pending_version(
             session_factory,
             settings,
@@ -611,25 +776,28 @@ async def upload_document_version(
             checksum,
         )
     )
-    node = configured_node(settings, replica.node_id)
     created_at = version.created_at or datetime.now(timezone.utc)
     # Version 1 historically uses document.id on disk. Every later immutable
     # version uses version.id, so no physical file can be overwritten.
-    storage_metadata = _storage_metadata(
-        version.id, filename, node, size_bytes, checksum, created_at
-    )
     try:
-        try:
-            await _store_on_node(client, upload, prepared_file, storage_metadata, node)
-        except HTTPException as error:
-            _record_failed_transfer(
-                session_factory, version.id, replica.id, str(error.detail)
-            )
-            raise
+        node = await _replicate_to_nodes(
+            client,
+            settings,
+            upload,
+            prepared_file,
+            session_factory,
+            document,
+            version,
+            replicas,
+            version.id,
+            filename,
+            size_bytes,
+            checksum,
+            created_at,
+        )
     finally:
         prepared_file.close()
 
-    _confirm_stored_replica(session_factory, document.id, version.id, replica.id)
     return StoredDocumentResponse(
         document_id=document.id,
         filename=filename,
@@ -648,7 +816,7 @@ async def upload_document_version(
         version_id=version.id,
         version_number=version.version_number,
         version_status="available",
-        target_replicas=TARGET_REPLICAS,
+        target_replicas=settings.replication_factor,
     )
 
 
@@ -782,6 +950,24 @@ def list_documents(
     return results
 
 
+def _healthy_replica(
+    session: Session,
+    version_id: UUID,
+    school_id: str,
+) -> DocumentReplica | None:
+    """Choose one deterministic healthy replica without implementing failover."""
+
+    return session.scalar(
+        select(DocumentReplica)
+        .join(StorageNode, StorageNode.id == DocumentReplica.node_id)
+        .where(
+            DocumentReplica.version_id == version_id,
+            DocumentReplica.status == "healthy",
+        )
+        .order_by(StorageNode.home_school_id != school_id, StorageNode.id)
+    )
+
+
 def _specific_version_record(
     session_factory: sessionmaker[Session],
     document_id: str,
@@ -810,12 +996,7 @@ def _specific_version_record(
                 else None
             )
             subjects = tuple(document.subjects)
-            replica = session.scalar(
-                select(DocumentReplica).where(
-                    DocumentReplica.version_id == version.id,
-                    DocumentReplica.status == "healthy",
-                )
-            )
+            replica = _healthy_replica(session, version.id, document.school_id)
             if school is None:
                 raise HTTPException(409, "document catalog is inconsistent")
             for value in (
@@ -962,12 +1143,7 @@ def _catalog_record(
             subjects = tuple(document.subjects)
             if version is None or school is None:
                 raise HTTPException(409, "document catalog is inconsistent")
-            replica = session.scalar(
-                select(DocumentReplica).where(
-                    DocumentReplica.version_id == version.id,
-                    DocumentReplica.status == "healthy",
-                )
-            )
+            replica = _healthy_replica(session, version.id, document.school_id)
             for value in (
                 document,
                 version,

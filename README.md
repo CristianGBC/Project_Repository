@@ -49,10 +49,9 @@ se configura con `NODE_REQUEST_TIMEOUT_SECONDS`.
 
 Los seis contenedores son seis **nodos lógicos**, pero al ejecutarse localmente
 comparten un solo equipo físico. En el futuro podrán distribuirse entre cuatro
-Raspberry Pi cambiando sus URLs, sin modificar la lógica del coordinador. Cuando
-se implemente `RF = 3`, la colocación deberá evitar que las tres réplicas de un
-documento dependan del mismo dispositivo físico. Esa regla todavía no está
-implementada.
+Raspberry Pi cambiando sus URLs, sin modificar la lógica del coordinador. Con
+`RF = 3`, PostgreSQL guía la colocación y evita que dos réplicas de una versión
+dependan del mismo `physical_host_id`.
 
 ## Estructura relevante
 
@@ -132,9 +131,9 @@ curl http://localhost:8000/documents/node-math/DOCUMENT_ID
 curl -OJ http://localhost:8000/documents/node-math/DOCUMENT_ID/download
 ```
 
-El coordinador y el nodo calculan SHA-256 de forma independiente. Antes de cada
-descarga, ambos vuelven a verificar el contenido. El factor temporal es RF = 1:
-cada documento existe únicamente en el nodo asociado a su escuela.
+El coordinador y cada nodo calculan SHA-256 de forma independiente. Antes de
+cada descarga, ambos vuelven a verificar el contenido. `REPLICATION_FACTOR`
+permite usar RF = 1 o la configuración predeterminada RF = 3.
 
 Verificar la API:
 
@@ -218,10 +217,10 @@ que las seis consultas se inicien concurrentemente.
 ## Funcionalidades todavía no implementadas
 
 Esta etapa no incluye frontend, importación automática de los metadatos JSON
-existentes, RF = 3, RabbitMQ, monitoreo periódico, recuperación automática,
+existentes, RabbitMQ, monitoreo periódico, recuperación automática,
 autenticación, autorización, cifrado, balanceo de carga ni despliegue físico
-sobre Raspberry Pi. La integración actual crea únicamente la primera versión y
-una réplica.
+sobre Raspberry Pi. RF = 3 replica escrituras de forma síncrona, pero todavía
+no implementa failover automático de lectura ni reparación.
 
 La Etapa 4.2 incorporó el esquema inicial del catálogo PostgreSQL, sus modelos,
 migración Alembic y datos institucionales reproducibles. La Etapa 4.3 conecta
@@ -229,7 +228,8 @@ los endpoints al catálogo sin mover los archivos fuera de sus nodos y conserva
 lectura compatible para documentos JSON anteriores. Las guías están en
 [`docs/postgresql.md`](docs/postgresql.md) y
 [`docs/postgresql-document-integration.md`](docs/postgresql-document-integration.md).
-La siguiente etapa podrá ampliar el flujo a RF = 3 y recuperación de copias.
+La replicación actual se explica en
+[`docs/rf3-replication.md`](docs/rf3-replication.md).
 
 ## Etapa 4.4: versionamiento y eliminación lógica
 
@@ -255,3 +255,12 @@ catálogo PostgreSQL. Los sílabos y materiales de estudio requieren al menos un
 los artículos y documentos administrativos permiten asociaciones opcionales.
 La guía de migración, endpoints, pruebas Swagger y consultas SQL está en
 [`docs/document-subjects.md`](docs/document-subjects.md).
+
+## Entorno PostgreSQL de pruebas
+
+El repositorio incluye una instancia PostgreSQL 16 aislada y reproducible para
+ejecutar las pruebas de integración sin tocar datos de desarrollo. La guía de
+inicio, migraciones, suite completa y limpieza segura está en
+[`docs/postgresql-testing.md`](docs/postgresql-testing.md). La revisión previa
+está en [`docs/rf3-readiness.md`](docs/rf3-readiness.md) y la implementación
+RF = 3 en [`docs/rf3-replication.md`](docs/rf3-replication.md).
