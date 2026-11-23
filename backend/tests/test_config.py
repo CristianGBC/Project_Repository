@@ -73,3 +73,47 @@ def test_invalid_replication_factor_is_rejected(monkeypatch, value: str) -> None
 
     with pytest.raises(ValueError, match="REPLICATION_FACTOR"):
         load_settings()
+
+
+def test_health_monitor_defaults_and_overrides(monkeypatch) -> None:
+    for variable in (
+        "HEALTH_CHECK_INTERVAL_SECONDS",
+        "HEALTH_CHECK_TIMEOUT_SECONDS",
+        "HEALTH_FAILURE_THRESHOLD",
+        "HEALTH_RECOVERY_THRESHOLD",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+    defaults = load_settings()
+    assert defaults.health_check_interval_seconds == 5
+    assert defaults.health_check_timeout_seconds == 2
+    assert defaults.health_failure_threshold == 3
+    assert defaults.health_recovery_threshold == 2
+
+    monkeypatch.setenv("HEALTH_CHECK_INTERVAL_SECONDS", "1.5")
+    monkeypatch.setenv("HEALTH_CHECK_TIMEOUT_SECONDS", "0.5")
+    monkeypatch.setenv("HEALTH_FAILURE_THRESHOLD", "4")
+    monkeypatch.setenv("HEALTH_RECOVERY_THRESHOLD", "3")
+    configured = load_settings()
+    assert configured.health_check_interval_seconds == 1.5
+    assert configured.health_check_timeout_seconds == 0.5
+    assert configured.health_failure_threshold == 4
+    assert configured.health_recovery_threshold == 3
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("HEALTH_CHECK_INTERVAL_SECONDS", "0"),
+        ("HEALTH_CHECK_INTERVAL_SECONDS", "invalid"),
+        ("HEALTH_CHECK_TIMEOUT_SECONDS", "-1"),
+        ("HEALTH_FAILURE_THRESHOLD", "0"),
+        ("HEALTH_RECOVERY_THRESHOLD", "0"),
+    ],
+)
+def test_invalid_health_monitor_settings_are_rejected(
+    monkeypatch, variable: str, value: str
+) -> None:
+    monkeypatch.setenv(variable, value)
+
+    with pytest.raises(ValueError):
+        load_settings()

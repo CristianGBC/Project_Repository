@@ -13,6 +13,7 @@ def test_compose_declares_independent_profiles() -> None:
     assert "profiles:\n      - coordinator" in COMPOSE_TEXT
     assert "profiles:\n    - storage" in COMPOSE_TEXT
     assert "depends_on:" not in COMPOSE_TEXT
+    assert "profiles:\n      - monitor" in COMPOSE_TEXT
 
 
 def test_compose_publishes_exact_storage_ports() -> None:
@@ -31,3 +32,7 @@ def test_compose_passes_configurable_urls_to_coordinator() -> None:
     assert "MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}" in COMPOSE_TEXT
     assert "REPLICATION_FACTOR: ${REPLICATION_FACTOR:-3}" in COMPOSE_TEXT
     assert "DATA_ROOT: /data" in COMPOSE_TEXT
+    assert "HEALTH_CHECK_INTERVAL_SECONDS: ${HEALTH_CHECK_INTERVAL_SECONDS:-5}" in COMPOSE_TEXT
+    assert "HEALTH_CHECK_TIMEOUT_SECONDS: ${HEALTH_CHECK_TIMEOUT_SECONDS:-2}" in COMPOSE_TEXT
+    assert "HEALTH_FAILURE_THRESHOLD: ${HEALTH_FAILURE_THRESHOLD:-3}" in COMPOSE_TEXT
+    assert "HEALTH_RECOVERY_THRESHOLD: ${HEALTH_RECOVERY_THRESHOLD:-2}" in COMPOSE_TEXT

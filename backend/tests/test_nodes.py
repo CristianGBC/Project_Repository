@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from backend.app.config import load_settings
+from backend.app.services.node_health import probe_node
 from backend.tests.conftest import coordinator_request
 
 
@@ -194,3 +195,38 @@ def test_unavailable_remote_node_does_not_affect_coordinator(monkeypatch) -> Non
 
     assert response.status_code == 200
     assert statuses["node-math"] == "unavailable"
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_result"),
+    [
+        ("timeout", "timeout"),
+        ("server", "server_error"),
+        ("invalid", "invalid_response"),
+        ("unreachable", "unreachable"),
+    ],
+)
+def test_probe_node_classifies_health_failures(
+    failure: str, expected_result: str
+) -> None:
+    settings = load_settings()
+    node = settings.nodes[0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if failure == "timeout":
+            raise httpx.ReadTimeout("slow", request=request)
+        if failure == "unreachable":
+            raise httpx.ConnectError("offline", request=request)
+        if failure == "server":
+            return httpx.Response(500)
+        return httpx.Response(200, json={"status": "ok"})
+
+    async def observe():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await probe_node(client, node, 0.1)
+
+    observation = asyncio.run(observe())
+
+    assert observation.healthy is False
+    assert observation.result == expected_result
+    assert observation.duration_ms >= 0

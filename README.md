@@ -13,6 +13,13 @@ nodos institucionales distribuidos entre dos computadoras Ubuntu.
 ```mermaid
 flowchart TD
     Client[Cliente] -->|HTTP puerto 8000| Coordinator[Coordinador FastAPI]
+    Monitor[Monitor periódico] -->|GET /health| Bio[node-bio]
+    Monitor -->|GET /health| Phy[node-phy]
+    Monitor -->|GET /health| Math[node-math]
+    Monitor -->|GET /health| Chem[node-chem]
+    Monitor -->|GET /health| Earth[node-earth]
+    Monitor -->|GET /health| Agro[node-agro]
+    Monitor -->|health y last_seen_at| PostgreSQL[(PostgreSQL)]
     Coordinator -->|GET /health| Bio[node-bio]
     Coordinator -->|GET /health| Phy[node-phy]
     Coordinator -->|GET /health| Math[node-math]
@@ -67,6 +74,8 @@ Project_Repository/
 │   ├── storage/
 │   │   ├── application.py
 │   │   └── main.py
+│   ├── monitor/
+│   │   └── main.py
 │   ├── tests/
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -94,12 +103,13 @@ Compose dispone de perfiles independientes:
 
 - `coordinator`: inicia únicamente el coordinador.
 - `storage`: inicia únicamente los seis nodos.
+- `monitor`: inicia el monitor periódico que persiste la salud en PostgreSQL.
 
 Para una prueba local completa, activa ambos perfiles:
 
 ```bash
 docker compose -f infrastructure/docker/compose.yaml \
-  --profile coordinator --profile storage up --build -d
+  --profile coordinator --profile storage --profile monitor up --build -d
 ```
 
 El coordinador queda disponible en <http://localhost:8000> y la documentación
@@ -147,6 +157,7 @@ Consultar contenedores y logs:
 ```bash
 docker compose -f infrastructure/docker/compose.yaml ps
 docker compose -f infrastructure/docker/compose.yaml logs coordinator
+docker compose -f infrastructure/docker/compose.yaml logs health-monitor
 docker compose -f infrastructure/docker/compose.yaml logs node-math
 ```
 
@@ -154,7 +165,7 @@ Detener el sistema sin eliminar sus seis volúmenes:
 
 ```bash
 docker compose -f infrastructure/docker/compose.yaml \
-  --profile coordinator --profile storage down
+  --profile coordinator --profile storage --profile monitor down
 ```
 
 No se debe usar `down -v` durante las pruebas normales porque elimina los
@@ -195,10 +206,10 @@ python -m pip install -r backend/requirements-dev.txt
 python -m pytest backend/tests
 ```
 
-Las pruebas no requieren Docker ni Raspberry Pi. Utilizan el transporte de
-prueba de HTTPX para simular respuestas correctas, conexiones fallidas,
-timeouts, HTTP 500, JSON inválido e identidades incorrectas. También verifican
-que las seis consultas se inicien concurrentemente.
+Las pruebas unitarias no requieren Docker ni Raspberry Pi y utilizan el
+transporte de prueba de HTTPX. Las pruebas de integración usan el PostgreSQL
+aislado de `compose.test.yaml`; verifican persistencia, RF=1/RF=3, failover y
+transiciones del monitor con el catálogo real.
 
 ## Comportamiento actual
 
@@ -217,7 +228,7 @@ que las seis consultas se inicien concurrentemente.
 ## Funcionalidades todavía no implementadas
 
 Esta etapa no incluye frontend, importación automática de los metadatos JSON
-existentes, RabbitMQ, monitoreo periódico, reparación automática,
+existentes, RabbitMQ, reparación automática,
 autenticación, autorización, cifrado, balanceo de carga ni despliegue físico
 sobre Raspberry Pi. RF = 3 replica escrituras de forma síncrona y las lecturas
 realizan failover, pero todavía no existe reparación de réplicas.
@@ -231,7 +242,9 @@ lectura compatible para documentos JSON anteriores. Las guías están en
 La replicación actual se explica en
 [`docs/rf3-replication.md`](docs/rf3-replication.md). Las descargas realizan
 failover transparente entre copias verificadas según
-[`docs/read-failover.md`](docs/read-failover.md).
+[`docs/read-failover.md`](docs/read-failover.md). El monitor periódico y sus
+umbrales se explican en
+[`docs/health-monitoring.md`](docs/health-monitoring.md).
 
 ## Etapa 4.4: versionamiento y eliminación lógica
 

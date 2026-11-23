@@ -23,6 +23,10 @@ class CoordinatorSettings:
     transfer_timeout_seconds: float
     max_upload_size_bytes: int
     replication_factor: int = 3
+    health_check_interval_seconds: float = 5.0
+    health_check_timeout_seconds: float = 2.0
+    health_failure_threshold: int = 3
+    health_recovery_threshold: int = 2
     database_url: str | None = None
     technical_user_id: UUID = UUID("7d14ef5d-3c61-4ac8-90b5-2bd3f0aa0431")
     technical_user_email: str = "development-operations@yachayrepo.invalid"
@@ -31,6 +35,14 @@ class CoordinatorSettings:
     def __post_init__(self) -> None:
         if self.replication_factor not in {1, 3}:
             raise ValueError("REPLICATION_FACTOR must be either 1 or 3")
+        if self.health_check_interval_seconds <= 0:
+            raise ValueError("HEALTH_CHECK_INTERVAL_SECONDS must be greater than zero")
+        if self.health_check_timeout_seconds <= 0:
+            raise ValueError("HEALTH_CHECK_TIMEOUT_SECONDS must be greater than zero")
+        if self.health_failure_threshold < 1:
+            raise ValueError("HEALTH_FAILURE_THRESHOLD must be at least one")
+        if self.health_recovery_threshold < 1:
+            raise ValueError("HEALTH_RECOVERY_THRESHOLD must be at least one")
 
 
 NODE_IDENTITIES: tuple[tuple[str, str, str], ...] = (
@@ -93,12 +105,23 @@ def load_settings() -> CoordinatorSettings:
         raise ValueError("REPLICATION_FACTOR must be either 1 or 3") from error
     if replication_factor not in {1, 3}:
         raise ValueError("REPLICATION_FACTOR must be either 1 or 3")
+    try:
+        health_interval = float(os.getenv("HEALTH_CHECK_INTERVAL_SECONDS", "5"))
+        health_timeout = float(os.getenv("HEALTH_CHECK_TIMEOUT_SECONDS", "2"))
+        failure_threshold = int(os.getenv("HEALTH_FAILURE_THRESHOLD", "3"))
+        recovery_threshold = int(os.getenv("HEALTH_RECOVERY_THRESHOLD", "2"))
+    except ValueError as error:
+        raise ValueError("health monitor settings must be numeric") from error
     return CoordinatorSettings(
         nodes=nodes,
         request_timeout_seconds=timeout,
         transfer_timeout_seconds=transfer_timeout,
         max_upload_size_bytes=int(max_upload_mb * 1024 * 1024),
         replication_factor=replication_factor,
+        health_check_interval_seconds=health_interval,
+        health_check_timeout_seconds=health_timeout,
+        health_failure_threshold=failure_threshold,
+        health_recovery_threshold=recovery_threshold,
         database_url=os.getenv("DATABASE_URL"),
         technical_user_id=UUID(
             os.getenv(

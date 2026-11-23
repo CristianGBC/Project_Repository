@@ -115,13 +115,13 @@ docker compose -f infrastructure/docker/compose.rf3-test.yaml up -d --wait
 ```
 
 Estos fallos temporales no cambian las réplicas a `corrupted` ni eliminan
-archivos. El experimento no implementa monitoreo ni reparación automática.
+archivos. El monitoreo periódico puede activarse con el perfil `monitor`, como
+explica [`health-monitoring.md`](health-monitoring.md), pero no repara copias.
 
 ## Limitaciones
 
-- No existe sondeo periódico de salud.
 - No se recrean copias `missing` o `corrupted`.
 - No hay reconciliación de réplicas fallidas.
-- `storage_nodes.health` sigue siendo una señal del catálogo, no un monitor en
-  tiempo real.
+- La salud es periódica y puede quedar desactualizada hasta el próximo ciclo y
+  sus umbrales.
 - PostgreSQL continúa siendo un punto único de fallo.
