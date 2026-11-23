@@ -1,5 +1,7 @@
 """Institutional configuration tests."""
 
+import pytest
+
 from backend.app.config import NODE_IDENTITIES, load_settings
 
 
@@ -55,3 +57,19 @@ def test_database_url_has_no_implicit_default(monkeypatch) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
 
     assert load_settings().database_url is None
+
+
+def test_replication_factor_defaults_to_three_and_accepts_one(monkeypatch) -> None:
+    monkeypatch.delenv("REPLICATION_FACTOR", raising=False)
+    assert load_settings().replication_factor == 3
+
+    monkeypatch.setenv("REPLICATION_FACTOR", "1")
+    assert load_settings().replication_factor == 1
+
+
+@pytest.mark.parametrize("value", ["0", "2", "4", "invalid"])
+def test_invalid_replication_factor_is_rejected(monkeypatch, value: str) -> None:
+    monkeypatch.setenv("REPLICATION_FACTOR", value)
+
+    with pytest.raises(ValueError, match="REPLICATION_FACTOR"):
+        load_settings()

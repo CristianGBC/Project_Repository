@@ -29,4 +29,5 @@ def test_compose_passes_configurable_urls_to_coordinator() -> None:
     )
     assert "DOCUMENT_TRANSFER_TIMEOUT_SECONDS: ${DOCUMENT_TRANSFER_TIMEOUT_SECONDS:-30.0}" in COMPOSE_TEXT
     assert "MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}" in COMPOSE_TEXT
+    assert "REPLICATION_FACTOR: ${REPLICATION_FACTOR:-3}" in COMPOSE_TEXT
     assert "DATA_ROOT: /data" in COMPOSE_TEXT

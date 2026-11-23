@@ -22,10 +22,15 @@ class CoordinatorSettings:
     request_timeout_seconds: float
     transfer_timeout_seconds: float
     max_upload_size_bytes: int
+    replication_factor: int = 3
     database_url: str | None = None
     technical_user_id: UUID = UUID("7d14ef5d-3c61-4ac8-90b5-2bd3f0aa0431")
     technical_user_email: str = "development-operations@yachayrepo.invalid"
     technical_user_password_hash: str = "!authentication-disabled!"
+
+    def __post_init__(self) -> None:
+        if self.replication_factor not in {1, 3}:
+            raise ValueError("REPLICATION_FACTOR must be either 1 or 3")
 
 
 NODE_IDENTITIES: tuple[tuple[str, str, str], ...] = (
@@ -82,11 +87,18 @@ def load_settings() -> CoordinatorSettings:
     max_upload_mb = float(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
     if max_upload_mb <= 0:
         raise ValueError("MAX_UPLOAD_SIZE_MB must be greater than zero")
+    try:
+        replication_factor = int(os.getenv("REPLICATION_FACTOR", "3"))
+    except ValueError as error:
+        raise ValueError("REPLICATION_FACTOR must be either 1 or 3") from error
+    if replication_factor not in {1, 3}:
+        raise ValueError("REPLICATION_FACTOR must be either 1 or 3")
     return CoordinatorSettings(
         nodes=nodes,
         request_timeout_seconds=timeout,
         transfer_timeout_seconds=transfer_timeout,
         max_upload_size_bytes=int(max_upload_mb * 1024 * 1024),
+        replication_factor=replication_factor,
         database_url=os.getenv("DATABASE_URL"),
         technical_user_id=UUID(
             os.getenv(
