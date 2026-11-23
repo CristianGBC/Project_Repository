@@ -65,11 +65,12 @@ usan el UUID de la versión, por lo que nunca sobrescriben contenido anterior.
 
 ## Lecturas y limitaciones actuales
 
-La descarga elige de forma determinista una réplica `healthy`, priorizando el
-nodo de la escuela, y verifica nuevamente tamaño y SHA-256. Esta fase no prueba
-otra réplica dentro de la misma solicitud si el nodo elegido falla. Tampoco
-incluye monitoreo, reparación, reintentos persistentes ni recuperación
-automática. PostgreSQL sigue siendo un punto único de fallo.
+La descarga ordena las réplicas `healthy`, prioriza el nodo de la escuela y
+verifica nuevamente tamaño y SHA-256. Si una copia falla, intenta la siguiente
+automáticamente como se explica en
+[`read-failover.md`](read-failover.md). Todavía no incluye monitoreo, reparación,
+reintentos persistentes ni recuperación automática. PostgreSQL sigue siendo un
+punto único de fallo.
 
 ## Prueba automatizada
 

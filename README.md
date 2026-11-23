@@ -217,10 +217,10 @@ que las seis consultas se inicien concurrentemente.
 ## Funcionalidades todavía no implementadas
 
 Esta etapa no incluye frontend, importación automática de los metadatos JSON
-existentes, RabbitMQ, monitoreo periódico, recuperación automática,
+existentes, RabbitMQ, monitoreo periódico, reparación automática,
 autenticación, autorización, cifrado, balanceo de carga ni despliegue físico
-sobre Raspberry Pi. RF = 3 replica escrituras de forma síncrona, pero todavía
-no implementa failover automático de lectura ni reparación.
+sobre Raspberry Pi. RF = 3 replica escrituras de forma síncrona y las lecturas
+realizan failover, pero todavía no existe reparación de réplicas.
 
 La Etapa 4.2 incorporó el esquema inicial del catálogo PostgreSQL, sus modelos,
 migración Alembic y datos institucionales reproducibles. La Etapa 4.3 conecta
@@ -229,7 +229,9 @@ lectura compatible para documentos JSON anteriores. Las guías están en
 [`docs/postgresql.md`](docs/postgresql.md) y
 [`docs/postgresql-document-integration.md`](docs/postgresql-document-integration.md).
 La replicación actual se explica en
-[`docs/rf3-replication.md`](docs/rf3-replication.md).
+[`docs/rf3-replication.md`](docs/rf3-replication.md). Las descargas realizan
+failover transparente entre copias verificadas según
+[`docs/read-failover.md`](docs/read-failover.md).
 
 ## Etapa 4.4: versionamiento y eliminación lógica
 

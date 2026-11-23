@@ -144,6 +144,69 @@ def replicated_storage_handler(failing_host: str | None = None):
     return handler
 
 
+class InterruptedReadStream(httpx.AsyncByteStream):
+    def __init__(self, request: httpx.Request) -> None:
+        self.request = request
+
+    async def __aiter__(self):
+        yield b"partial"
+        raise httpx.ReadError("interrupted", request=self.request)
+
+
+def read_fault_handler(storage_handler, faults: dict[str, str]):
+    visits: list[tuple[str, str]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        is_file_read = (
+            request.method == "GET"
+            and request.url.path.startswith("/files/")
+            and not request.url.path.endswith("/metadata")
+        )
+        if not is_file_read:
+            return await storage_handler(request)
+
+        host = request.url.host
+        storage_id = request.url.path.strip("/").split("/")[1]
+        visits.append((host, storage_id))
+        fault = faults.get(host)
+        if fault == "connection":
+            raise httpx.ConnectError("offline", request=request)
+        if fault == "timeout":
+            raise httpx.ReadTimeout("slow", request=request)
+        if fault == "server_error":
+            return httpx.Response(500, json={"detail": "temporary"})
+        if fault == "missing":
+            return httpx.Response(404, json={"detail": "missing"})
+        if fault == "interrupted":
+            return httpx.Response(200, stream=InterruptedReadStream(request))
+        if fault in {"corrupted", "short"}:
+            _, content = storage_handler.records[(host, storage_id)]
+            if fault == "short":
+                content = content[:-1]
+            elif content:
+                content = bytes([content[0] ^ 0xFF]) + content[1:]
+            return httpx.Response(200, content=content)
+        return await storage_handler(request)
+
+    handler.visits = visits
+    return handler
+
+
+def _create_rf3_document(handler, session_factory, content: bytes | None = None):
+    payload = content or f"read-failover-{uuid4()}".encode()
+    response = _request(
+        handler,
+        session_factory,
+        "/documents",
+        method="POST",
+        replication_factor=3,
+        data={"school_id": "school-math", "title": "Read failover"},
+        files={"file": (f"failover-{uuid4()}.txt", payload, "text/plain")},
+    )
+    assert response.status_code == 201, response.text
+    return response.json(), payload
+
+
 def _create_subject(session_factory, code: str, name: str | None = None) -> dict:
     def unexpected_request(request):
         raise AssertionError(f"Unexpected storage request to {request.url}")
@@ -313,6 +376,230 @@ def test_rf3_stores_three_verified_replicas_on_distinct_catalog_hosts(
     )
     assert downloaded.status_code == 200
     assert downloaded.content == content
+
+
+def test_read_uses_first_healthy_replica_without_failover(
+    catalog_session_factory,
+) -> None:
+    storage = replicated_storage_handler()
+    document, content = _create_rf3_document(storage, catalog_session_factory)
+    handler = read_fault_handler(storage, {})
+
+    downloaded = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/school-math/{document['document_id']}/download",
+        replication_factor=3,
+    )
+
+    assert downloaded.status_code == 200
+    assert downloaded.content == content
+    assert handler.visits == [("node-math", document["document_id"])]
+
+
+@pytest.mark.parametrize(
+    ("failure_type", "expected_status", "recorded_type"),
+    [
+        ("connection", "healthy", "unreachable"),
+        ("timeout", "healthy", "unreachable"),
+        ("server_error", "healthy", "server_error"),
+        ("interrupted", "healthy", "interrupted"),
+        ("missing", "missing", "missing"),
+        ("corrupted", "corrupted", "corrupted"),
+        ("short", "corrupted", "corrupted"),
+    ],
+)
+def test_read_failover_uses_second_replica_and_classifies_first_failure(
+    catalog_session_factory,
+    failure_type: str,
+    expected_status: str,
+    recorded_type: str,
+) -> None:
+    storage = replicated_storage_handler()
+    document, content = _create_rf3_document(storage, catalog_session_factory)
+    handler = read_fault_handler(storage, {"node-math": failure_type})
+
+    downloaded = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/school-math/{document['document_id']}/download",
+        replication_factor=3,
+    )
+
+    assert downloaded.status_code == 200
+    assert downloaded.content == content
+    assert handler.visits == [
+        ("node-math", document["document_id"]),
+        ("node-agro", document["document_id"]),
+    ]
+    with catalog_session_factory() as session:
+        version = session.get(DocumentVersion, document["version_id"])
+        first = session.scalar(
+            select(DocumentReplica).where(
+                DocumentReplica.version_id == version.id,
+                DocumentReplica.node_id == "node-math",
+            )
+        )
+        second = session.scalar(
+            select(DocumentReplica).where(
+                DocumentReplica.version_id == version.id,
+                DocumentReplica.node_id == "node-agro",
+            )
+        )
+        assert version.status == "available"
+        assert first.status == expected_status
+        assert first.last_error.startswith(f"read {recorded_type}")
+        assert second.status == "healthy"
+        assert second.last_error is None
+
+
+def test_read_failover_survives_two_failed_replicas(
+    catalog_session_factory,
+) -> None:
+    storage = replicated_storage_handler()
+    document, content = _create_rf3_document(storage, catalog_session_factory)
+    handler = read_fault_handler(
+        storage,
+        {"node-math": "connection", "node-agro": "server_error"},
+    )
+
+    downloaded = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/school-math/{document['document_id']}/download",
+        replication_factor=3,
+    )
+
+    assert downloaded.status_code == 200
+    assert downloaded.content == content
+    assert [host for host, _ in handler.visits] == [
+        "node-math",
+        "node-agro",
+        "node-bio",
+    ]
+
+
+def test_read_failover_returns_controlled_errors_when_all_replicas_fail(
+    catalog_session_factory,
+) -> None:
+    storage = replicated_storage_handler()
+    temporary_document, _ = _create_rf3_document(storage, catalog_session_factory)
+    temporary_handler = read_fault_handler(
+        storage,
+        {
+            "node-math": "connection",
+            "node-agro": "timeout",
+            "node-bio": "server_error",
+        },
+    )
+    temporary = _request(
+        temporary_handler,
+        catalog_session_factory,
+        f"/documents/school-math/{temporary_document['document_id']}/download",
+        replication_factor=3,
+    )
+
+    other_storage = replicated_storage_handler()
+    invalid_document, _ = _create_rf3_document(
+        other_storage, catalog_session_factory
+    )
+    invalid_handler = read_fault_handler(
+        other_storage,
+        {
+            "node-math": "missing",
+            "node-agro": "corrupted",
+            "node-bio": "short",
+        },
+    )
+    invalid = _request(
+        invalid_handler,
+        catalog_session_factory,
+        f"/documents/school-math/{invalid_document['document_id']}/download",
+        replication_factor=3,
+    )
+
+    assert temporary.status_code == 503
+    assert temporary.json()["detail"] == "document is temporarily unavailable"
+    assert invalid.status_code == 409
+    assert invalid.json()["detail"] == "no intact document replica is available"
+    assert len(temporary_handler.visits) == 3
+    assert len(invalid_handler.visits) == 3
+
+
+def test_read_failover_uses_version_specific_replicas_and_ignores_active_rf(
+    catalog_session_factory,
+) -> None:
+    storage = replicated_storage_handler()
+    first, first_content = _create_rf3_document(
+        storage, catalog_session_factory, b"historical version one"
+    )
+    second_content = b"current version two"
+    second = _request(
+        storage,
+        catalog_session_factory,
+        f"/documents/{first['document_id']}/versions",
+        method="POST",
+        replication_factor=3,
+        files={"file": ("historical-v2.txt", second_content, "text/plain")},
+    )
+    assert second.status_code == 201
+    handler = read_fault_handler(storage, {"node-math": "connection"})
+
+    historical = _request(
+        handler,
+        catalog_session_factory,
+        f"/documents/{first['document_id']}/versions/1/download",
+        replication_factor=1,
+    )
+
+    assert historical.status_code == 200
+    assert historical.content == first_content
+    assert {storage_id for _, storage_id in handler.visits} == {
+        first["document_id"]
+    }
+    with catalog_session_factory() as session:
+        document = session.get(Document, first["document_id"])
+        assert str(document.current_version_id) == second.json()["version_id"]
+
+
+def test_read_failover_closes_temporaries_and_supports_concurrent_downloads(
+    catalog_session_factory,
+    monkeypatch,
+) -> None:
+    from backend.app.services import document_service
+
+    storage = replicated_storage_handler()
+    document, content = _create_rf3_document(storage, catalog_session_factory)
+    handler = read_fault_handler(storage, {"node-math": "corrupted"})
+    real_spooled_file = document_service.tempfile.SpooledTemporaryFile
+    temporary_files = []
+
+    def tracked_spooled_file(*args, **kwargs):
+        temporary = real_spooled_file(*args, **kwargs)
+        temporary_files.append(temporary)
+        return temporary
+
+    monkeypatch.setattr(
+        document_service.tempfile,
+        "SpooledTemporaryFile",
+        tracked_spooled_file,
+    )
+
+    def download(_value: int):
+        return _request(
+            handler,
+            catalog_session_factory,
+            f"/documents/school-math/{document['document_id']}/download",
+            replication_factor=3,
+        )
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        responses = list(executor.map(download, range(3)))
+
+    assert all(response.status_code == 200 for response in responses)
+    assert all(response.content == content for response in responses)
+    assert temporary_files
+    assert all(temporary.closed for temporary in temporary_files)
 
 
 def test_rf3_rejects_upload_when_fewer_than_three_catalog_hosts_are_eligible(

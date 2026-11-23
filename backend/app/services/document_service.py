@@ -9,8 +9,10 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import logging
 from pathlib import Path
 import tempfile
+import time
 from typing import AsyncIterator, BinaryIO
 from urllib.parse import quote
 from uuid import UUID, uuid4
@@ -64,9 +66,25 @@ class CatalogRecord:
     document: Document
     version: DocumentVersion
     school: School
-    replica: DocumentReplica | None
+    replicas: tuple[DocumentReplica, ...]
     document_type: DocumentType | None
     subjects: tuple[Subject, ...]
+
+    @property
+    def replica(self) -> DocumentReplica | None:
+        return self.replicas[0] if self.replicas else None
+
+
+class ReplicaReadError(Exception):
+    """One replica-specific read failure that may permit another candidate."""
+
+    def __init__(self, failure_type: str, detail: str) -> None:
+        super().__init__(detail)
+        self.failure_type = failure_type
+        self.detail = detail
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 def configured_node(settings: CoordinatorSettings, node_id: str) -> NodeSettings:
@@ -950,21 +968,27 @@ def list_documents(
     return results
 
 
-def _healthy_replica(
+def _healthy_replicas(
     session: Session,
     version_id: UUID,
     school_id: str,
-) -> DocumentReplica | None:
-    """Choose one deterministic healthy replica without implementing failover."""
+) -> tuple[DocumentReplica, ...]:
+    """Return every eligible replica in deterministic failover order."""
 
-    return session.scalar(
-        select(DocumentReplica)
-        .join(StorageNode, StorageNode.id == DocumentReplica.node_id)
-        .where(
-            DocumentReplica.version_id == version_id,
-            DocumentReplica.status == "healthy",
-        )
-        .order_by(StorageNode.home_school_id != school_id, StorageNode.id)
+    return tuple(
+        session.scalars(
+            select(DocumentReplica)
+            .join(StorageNode, StorageNode.id == DocumentReplica.node_id)
+            .join(PhysicalHost, PhysicalHost.id == StorageNode.physical_host_id)
+            .where(
+                DocumentReplica.version_id == version_id,
+                DocumentReplica.status == "healthy",
+                StorageNode.is_active.is_(True),
+                StorageNode.health != "down",
+                PhysicalHost.is_active.is_(True),
+            )
+            .order_by(StorageNode.home_school_id != school_id, StorageNode.id)
+        ).all()
     )
 
 
@@ -996,14 +1020,14 @@ def _specific_version_record(
                 else None
             )
             subjects = tuple(document.subjects)
-            replica = _healthy_replica(session, version.id, document.school_id)
+            replicas = _healthy_replicas(session, version.id, document.school_id)
             if school is None:
                 raise HTTPException(409, "document catalog is inconsistent")
             for value in (
                 document,
                 version,
                 school,
-                replica,
+                *replicas,
                 document_type,
                 *subjects,
             ):
@@ -1013,7 +1037,7 @@ def _specific_version_record(
                 document,
                 version,
                 school,
-                replica,
+                replicas,
                 document_type,
                 subjects,
             )
@@ -1033,14 +1057,18 @@ async def download_document_version(
     if session_factory is None:
         raise _database_unavailable()
     record = _specific_version_record(session_factory, document_id, version_number)
-    if record.version.status != "available" or record.replica is None:
+    if record.version.status != "available" or not record.replicas:
         raise HTTPException(409, "document version has no healthy replica")
-    metadata = _metadata_from_catalog(record)
-    node = configured_node(settings, record.replica.node_id)
     storage_id = (
         record.document.id if record.version.version_number == 1 else record.version.id
     )
-    return await _verified_download(client, settings, node, str(storage_id), metadata)
+    return await _download_with_failover(
+        client,
+        settings,
+        record,
+        str(storage_id),
+        session_factory,
+    )
 
 
 def soft_delete_document(
@@ -1143,12 +1171,12 @@ def _catalog_record(
             subjects = tuple(document.subjects)
             if version is None or school is None:
                 raise HTTPException(409, "document catalog is inconsistent")
-            replica = _healthy_replica(session, version.id, document.school_id)
+            replicas = _healthy_replicas(session, version.id, document.school_id)
             for value in (
                 document,
                 version,
                 school,
-                replica,
+                *replicas,
                 document_type,
                 *subjects,
             ):
@@ -1158,7 +1186,7 @@ def _catalog_record(
                 document,
                 version,
                 school,
-                replica,
+                replicas,
                 document_type,
                 subjects,
             )
@@ -1257,36 +1285,48 @@ async def _stream_and_close(source: BinaryIO) -> AsyncIterator[bytes]:
         source.close()
 
 
-async def _verified_download(
+async def _fetch_verified_file(
     client: httpx.AsyncClient,
     settings: CoordinatorSettings,
     node: NodeSettings,
     document_id: str,
     metadata: DocumentMetadata,
-) -> StreamingResponse:
+) -> BinaryIO:
     request = client.build_request("GET", f"{node.url}/files/{document_id}")
     try:
         response = await client.send(request, stream=True)
     except httpx.RequestError as error:
-        raise _service_unavailable(error) from error
+        raise ReplicaReadError("unreachable", type(error).__name__) from error
     temporary = tempfile.SpooledTemporaryFile(
         max_size=min(settings.max_upload_size_bytes, CHUNK_SIZE), mode="w+b"
     )
     size_bytes = 0
     digest = hashlib.sha256()
     try:
+        if response.status_code == 404:
+            raise ReplicaReadError("missing", "storage returned HTTP 404")
+        if response.status_code == 409:
+            raise ReplicaReadError("corrupted", "storage rejected replica integrity")
+        if response.status_code >= 500:
+            raise ReplicaReadError(
+                "server_error", f"storage returned HTTP {response.status_code}"
+            )
         if not response.is_success:
-            await response.aread()
-            await _raise_remote_error(response)
+            raise ReplicaReadError(
+                "server_error", f"storage returned HTTP {response.status_code}"
+            )
         async for chunk in response.aiter_bytes(CHUNK_SIZE):
             size_bytes += len(chunk)
-            if size_bytes > settings.max_upload_size_bytes:
-                raise HTTPException(502, "storage returned oversized content")
+            if (
+                size_bytes > settings.max_upload_size_bytes
+                or size_bytes > metadata.size_bytes
+            ):
+                raise ReplicaReadError("corrupted", "replica size exceeds metadata")
             digest.update(chunk)
             temporary.write(chunk)
     except httpx.RequestError as error:
         temporary.close()
-        raise _service_unavailable(error) from error
+        raise ReplicaReadError("interrupted", type(error).__name__) from error
     except Exception:
         temporary.close()
         raise
@@ -1294,13 +1334,157 @@ async def _verified_download(
         await response.aclose()
     if size_bytes != metadata.size_bytes or digest.hexdigest() != metadata.sha256:
         temporary.close()
-        raise HTTPException(409, "document integrity verification failed")
+        raise ReplicaReadError(
+            "corrupted", "replica size or checksum does not match metadata"
+        )
     temporary.seek(0)
+    return temporary
+
+
+def _streaming_download(temporary: BinaryIO, filename: str) -> StreamingResponse:
     return StreamingResponse(
         _stream_and_close(temporary),
         media_type="application/octet-stream",
-        headers=_download_headers(metadata.filename),
+        headers=_download_headers(filename),
     )
+
+
+def _record_replica_read_failure(
+    session_factory: sessionmaker[Session],
+    replica_id: UUID,
+    failure: ReplicaReadError,
+) -> None:
+    try:
+        with session_factory.begin() as session:
+            replica = session.scalar(
+                select(DocumentReplica)
+                .where(DocumentReplica.id == replica_id)
+                .with_for_update()
+            )
+            if replica is None or replica.status != "healthy":
+                return
+            replica.attempts += 1
+            replica.last_error = (
+                f"read {failure.failure_type}: {failure.detail}"
+            )[:1000]
+            if failure.failure_type == "missing":
+                replica.status = "missing"
+            elif failure.failure_type == "corrupted":
+                replica.status = "corrupted"
+    except SQLAlchemyError:
+        return
+
+
+def _record_replica_read_success(
+    session_factory: sessionmaker[Session],
+    replica_id: UUID,
+) -> None:
+    try:
+        with session_factory.begin() as session:
+            replica = session.scalar(
+                select(DocumentReplica)
+                .where(DocumentReplica.id == replica_id)
+                .with_for_update()
+            )
+            if replica is None or replica.status != "healthy":
+                return
+            replica.verified_at = datetime.now(timezone.utc)
+            replica.last_error = None
+    except SQLAlchemyError:
+        return
+
+
+def _legacy_download_error(failure: ReplicaReadError) -> HTTPException:
+    if failure.failure_type == "missing":
+        return HTTPException(404, "document does not exist")
+    if failure.failure_type == "corrupted":
+        return HTTPException(409, "document integrity verification failed")
+    return HTTPException(503, "storage node is unavailable")
+
+
+async def _verified_download(
+    client: httpx.AsyncClient,
+    settings: CoordinatorSettings,
+    node: NodeSettings,
+    document_id: str,
+    metadata: DocumentMetadata,
+) -> StreamingResponse:
+    """Preserve the single-node Stage 3 download contract."""
+
+    try:
+        temporary = await _fetch_verified_file(
+            client, settings, node, document_id, metadata
+        )
+    except ReplicaReadError as failure:
+        raise _legacy_download_error(failure) from failure
+    return _streaming_download(temporary, metadata.filename)
+
+
+async def _download_with_failover(
+    client: httpx.AsyncClient,
+    settings: CoordinatorSettings,
+    record: CatalogRecord,
+    storage_id: str,
+    session_factory: sessionmaker[Session],
+) -> StreamingResponse:
+    metadata = _metadata_from_catalog(record)
+    configured_nodes = {node.node_id: node for node in settings.nodes}
+    candidates = [
+        (replica, configured_nodes[replica.node_id])
+        for replica in record.replicas
+        if replica.node_id in configured_nodes
+    ]
+    if not candidates:
+        raise HTTPException(503, "document is temporarily unavailable")
+
+    failures: list[ReplicaReadError] = []
+    for attempt, (replica, node) in enumerate(candidates, start=1):
+        started = time.monotonic()
+        try:
+            temporary = await _fetch_verified_file(
+                client,
+                settings,
+                node,
+                storage_id,
+                metadata,
+            )
+        except ReplicaReadError as failure:
+            elapsed_ms = (time.monotonic() - started) * 1000
+            failures.append(failure)
+            _record_replica_read_failure(session_factory, replica.id, failure)
+            logger.warning(
+                "replica read failed document_id=%s version_id=%s replica_id=%s "
+                "node_id=%s attempt=%d failure_type=%s elapsed_ms=%.1f",
+                record.document.id,
+                record.version.id,
+                replica.id,
+                replica.node_id,
+                attempt,
+                failure.failure_type,
+                elapsed_ms,
+            )
+            continue
+
+        elapsed_ms = (time.monotonic() - started) * 1000
+        _record_replica_read_success(session_factory, replica.id)
+        logger.info(
+            "replica read succeeded document_id=%s version_id=%s replica_id=%s "
+            "node_id=%s attempt=%d elapsed_ms=%.1f",
+            record.document.id,
+            record.version.id,
+            replica.id,
+            replica.node_id,
+            attempt,
+            elapsed_ms,
+        )
+        return _streaming_download(temporary, metadata.filename)
+
+    conclusive = {"missing", "corrupted"}
+    if failures and all(
+        failure.failure_type in conclusive for failure in failures
+    ):
+        raise HTTPException(409, "no intact document replica is available")
+    raise HTTPException(503, "document is temporarily unavailable")
 
 
 async def download_document(
@@ -1324,28 +1508,15 @@ async def download_document(
         )
         node = configured_node(settings, metadata.node_id)
         return await _verified_download(client, settings, node, document_id, metadata)
-    if record.version.status != "available" or record.replica is None:
+    if record.version.status != "available" or not record.replicas:
         raise HTTPException(409, "document has no healthy replica")
-    metadata = _metadata_from_catalog(record)
-    node = configured_node(settings, record.replica.node_id)
     storage_id = (
         record.document.id if record.version.version_number == 1 else record.version.id
     )
-    try:
-        return await _verified_download(
-            client, settings, node, str(storage_id), metadata
-        )
-    except HTTPException as error:
-        if error.status_code == 404:
-            try:
-                with session_factory.begin() as session:
-                    replica = session.get(DocumentReplica, record.replica.id)
-                    if replica is not None:
-                        replica.status = "missing"
-                        replica.last_error = (
-                            "registered file is missing from storage node"
-                        )
-            except SQLAlchemyError:
-                pass
-            raise HTTPException(409, "registered replica is missing") from error
-        raise
+    return await _download_with_failover(
+        client,
+        settings,
+        record,
+        str(storage_id),
+        session_factory,
+    )
