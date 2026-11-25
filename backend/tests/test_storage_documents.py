@@ -180,3 +180,74 @@ def test_storage_roots_isolate_documents_between_nodes(tmp_path: Path) -> None:
     assert bio_missing.status_code == 404
     assert (math_root / "documents" / f"{document_id}.bin").is_file()
     assert not (bio_root / "documents" / f"{document_id}.bin").exists()
+
+
+def test_internal_repair_requires_token_and_atomically_replaces_corruption(
+    tmp_path: Path,
+) -> None:
+    document_id = str(uuid4())
+    application = create_app(
+        "node-math", SCHOOL, tmp_path, 1024, repair_internal_token="secret"
+    )
+    assert store_request(application, document_id, b"original").status_code == 201
+    (tmp_path / "documents" / f"{document_id}.bin").write_bytes(b"corrupt")
+    content = b"repaired"
+    form = document_form(content)
+
+    forbidden = asgi_request(
+        application,
+        "PUT",
+        f"/internal/repair/{document_id}",
+        data=form,
+        files={"file": ("repair.bin", content)},
+    )
+    repaired = asgi_request(
+        application,
+        "PUT",
+        f"/internal/repair/{document_id}",
+        headers={"X-Repair-Token": "secret"},
+        data=form,
+        files={"file": ("repair.bin", content)},
+    )
+    downloaded = asgi_request(application, "GET", f"/files/{document_id}")
+
+    assert forbidden.status_code == 403
+    assert repaired.status_code == 200
+    assert downloaded.content == content
+
+
+def test_internal_delete_is_verified_idempotent_and_protected(tmp_path: Path) -> None:
+    document_id = str(uuid4())
+    content = b"retire safely"
+    checksum = hashlib.sha256(content).hexdigest()
+    application = create_app(
+        "node-math", SCHOOL, tmp_path, 1024, repair_internal_token="secret"
+    )
+    assert store_request(application, document_id, content).status_code == 201
+
+    mismatch = asgi_request(
+        application,
+        "DELETE",
+        f"/internal/repair/{document_id}",
+        headers={"X-Repair-Token": "secret"},
+        params={"expected_sha256": "0" * 64},
+    )
+    deleted = asgi_request(
+        application,
+        "DELETE",
+        f"/internal/repair/{document_id}",
+        headers={"X-Repair-Token": "secret"},
+        params={"expected_sha256": checksum},
+    )
+    repeated = asgi_request(
+        application,
+        "DELETE",
+        f"/internal/repair/{document_id}",
+        headers={"X-Repair-Token": "secret"},
+        params={"expected_sha256": checksum},
+    )
+
+    assert mismatch.status_code == 409
+    assert deleted.status_code == 204
+    assert repeated.status_code == 204
+    assert not (tmp_path / "documents" / f"{document_id}.bin").exists()

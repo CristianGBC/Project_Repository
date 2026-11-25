@@ -117,3 +117,62 @@ def test_invalid_health_monitor_settings_are_rejected(
 
     with pytest.raises(ValueError):
         load_settings()
+
+
+def test_replica_repair_defaults_and_overrides(monkeypatch) -> None:
+    variables = (
+        "REPAIR_ENABLED",
+        "REPAIR_INTERVAL_SECONDS",
+        "REPAIR_DOWN_GRACE_SECONDS",
+        "REPAIR_MAX_CONCURRENT_JOBS",
+        "REPAIR_TRANSFER_TIMEOUT_SECONDS",
+        "REPAIR_RETRY_BACKOFF_SECONDS",
+        "REPAIR_EXCESS_CLEANUP_ENABLED",
+    )
+    for variable in variables:
+        monkeypatch.delenv(variable, raising=False)
+    defaults = load_settings()
+    assert defaults.repair_enabled is True
+    assert defaults.repair_interval_seconds == 10
+    assert defaults.repair_down_grace_seconds == 60
+    assert defaults.repair_max_concurrent_jobs == 2
+    assert defaults.repair_transfer_timeout_seconds == 120
+    assert defaults.repair_retry_backoff_seconds == 30
+    assert defaults.repair_excess_cleanup_enabled is True
+
+    monkeypatch.setenv("REPAIR_ENABLED", "false")
+    monkeypatch.setenv("REPAIR_INTERVAL_SECONDS", "2")
+    monkeypatch.setenv("REPAIR_DOWN_GRACE_SECONDS", "0")
+    monkeypatch.setenv("REPAIR_MAX_CONCURRENT_JOBS", "4")
+    monkeypatch.setenv("REPAIR_TRANSFER_TIMEOUT_SECONDS", "8")
+    monkeypatch.setenv("REPAIR_RETRY_BACKOFF_SECONDS", "1")
+    monkeypatch.setenv("REPAIR_EXCESS_CLEANUP_ENABLED", "false")
+    configured = load_settings()
+    assert configured.repair_enabled is False
+    assert configured.repair_interval_seconds == 2
+    assert configured.repair_down_grace_seconds == 0
+    assert configured.repair_max_concurrent_jobs == 4
+    assert configured.repair_transfer_timeout_seconds == 8
+    assert configured.repair_retry_backoff_seconds == 1
+    assert configured.repair_excess_cleanup_enabled is False
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("REPAIR_ENABLED", "yes"),
+        ("REPAIR_INTERVAL_SECONDS", "0"),
+        ("REPAIR_DOWN_GRACE_SECONDS", "-1"),
+        ("REPAIR_MAX_CONCURRENT_JOBS", "0"),
+        ("REPAIR_TRANSFER_TIMEOUT_SECONDS", "0"),
+        ("REPAIR_RETRY_BACKOFF_SECONDS", "-1"),
+        ("REPAIR_EXCESS_CLEANUP_ENABLED", "invalid"),
+        ("REPAIR_INTERVAL_SECONDS", "invalid"),
+    ],
+)
+def test_invalid_replica_repair_settings_are_rejected(
+    monkeypatch, variable: str, value: str
+) -> None:
+    monkeypatch.setenv(variable, value)
+    with pytest.raises(ValueError):
+        load_settings()

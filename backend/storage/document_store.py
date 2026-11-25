@@ -176,6 +176,101 @@ class DocumentStore:
         except (OSError, json.JSONDecodeError, ValidationError) as error:
             raise DocumentCorrupted("stored metadata is invalid") from error
 
+    async def repair(
+        self,
+        upload: UploadFile,
+        metadata: DocumentMetadata,
+    ) -> DocumentMetadata:
+        """Idempotently replace one missing/corrupt immutable replica."""
+
+        self._ensure_directories()
+        document_id = str(metadata.document_id)
+        document_path, metadata_path, claim_path = self._paths(document_id)
+        try:
+            claim_fd = os.open(claim_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            os.close(claim_fd)
+        except FileExistsError as error:
+            raise DocumentConflict("document_id is currently being repaired") from error
+
+        document_temp: Path | None = None
+        metadata_temp: Path | None = None
+        try:
+            try:
+                _, current = await self.verified_document(document_id)
+            except (DocumentNotFound, DocumentCorrupted, InvalidDocument):
+                current = None
+            if (
+                current is not None
+                and current.size_bytes == metadata.size_bytes
+                and current.sha256 == metadata.sha256
+                and current.node_id == metadata.node_id
+            ):
+                return current
+
+            temp_fd, temp_name = tempfile.mkstemp(
+                prefix=f"{document_id}.", suffix=".repair.part", dir=self.temporary_dir
+            )
+            document_temp = Path(temp_name)
+            digest = hashlib.sha256()
+            size_bytes = 0
+            with os.fdopen(temp_fd, "wb") as target:
+                while chunk := await upload.read(CHUNK_SIZE):
+                    size_bytes += len(chunk)
+                    if size_bytes > self.max_upload_size_bytes:
+                        raise DocumentTooLarge("document exceeds configured size limit")
+                    digest.update(chunk)
+                    target.write(chunk)
+                target.flush()
+                os.fsync(target.fileno())
+            if size_bytes == 0:
+                raise InvalidDocument("document must not be empty")
+            if size_bytes != metadata.size_bytes or digest.hexdigest() != metadata.sha256:
+                raise InvalidDocument("repair content does not match metadata")
+
+            metadata_fd, metadata_name = tempfile.mkstemp(
+                prefix=f"{document_id}.",
+                suffix=".repair.json.part",
+                dir=self.temporary_dir,
+            )
+            metadata_temp = Path(metadata_name)
+            with os.fdopen(metadata_fd, "wb") as target:
+                target.write(metadata.model_dump_json().encode("utf-8"))
+                target.flush()
+                os.fsync(target.fileno())
+
+            os.replace(document_temp, document_path)
+            document_temp = None
+            os.replace(metadata_temp, metadata_path)
+            metadata_temp = None
+            return metadata
+        finally:
+            if document_temp is not None:
+                document_temp.unlink(missing_ok=True)
+            if metadata_temp is not None:
+                metadata_temp.unlink(missing_ok=True)
+            claim_path.unlink(missing_ok=True)
+
+    async def delete_verified(self, document_id: str, expected_sha256: str) -> None:
+        """Delete exactly one verified replica, idempotently."""
+
+        self._ensure_directories()
+        document_path, metadata_path, claim_path = self._paths(document_id)
+        try:
+            claim_fd = os.open(claim_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            os.close(claim_fd)
+        except FileExistsError as error:
+            raise DocumentConflict("document_id is currently being modified") from error
+        try:
+            if not document_path.exists() and not metadata_path.exists():
+                return
+            _, metadata = await self.verified_document(document_id)
+            if metadata.sha256 != expected_sha256:
+                raise DocumentConflict("stored checksum does not match delete request")
+            metadata_path.unlink()
+            document_path.unlink(missing_ok=True)
+        finally:
+            claim_path.unlink(missing_ok=True)
+
     async def verified_document(
         self,
         document_id: str,

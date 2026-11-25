@@ -140,6 +140,8 @@ variables `NODE_*_URL`, mientras que la ubicación física se obtiene únicament
 de `physical_host_id` en PostgreSQL. En Raspberry Pi solo deben cambiar las URLs
 y la ubicación del servicio que ejecuta el monitor.
 
-Todavía no existen reparación automática, recreación de copias, reconciliación,
-historial persistente de cada comprobación ni dashboard. Los contadores no
+La reparación automática se ejecuta en el proceso independiente descrito en
+[`replica-repair.md`](replica-repair.md); el monitor nunca transfiere archivos.
+Todavía no existen reconciliación general de subidas, historial persistente de
+cada comprobación ni dashboard. Los contadores no
 sobreviven al reinicio y PostgreSQL continúa siendo un punto único de fallo.

@@ -20,6 +20,13 @@ flowchart TD
     Monitor -->|GET /health| Earth[node-earth]
     Monitor -->|GET /health| Agro[node-agro]
     Monitor -->|health y last_seen_at| PostgreSQL[(PostgreSQL)]
+    Repair[Reparador de réplicas] -->|consulta y reservas| PostgreSQL
+    Repair -->|transferencia verificada| Bio
+    Repair -->|transferencia verificada| Phy
+    Repair -->|transferencia verificada| Math
+    Repair -->|transferencia verificada| Chem
+    Repair -->|transferencia verificada| Earth
+    Repair -->|transferencia verificada| Agro
     Coordinator -->|GET /health| Bio[node-bio]
     Coordinator -->|GET /health| Phy[node-phy]
     Coordinator -->|GET /health| Math[node-math]
@@ -76,6 +83,8 @@ Project_Repository/
 │   │   └── main.py
 │   ├── monitor/
 │   │   └── main.py
+│   ├── repair/
+│   │   └── main.py
 │   ├── tests/
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -104,12 +113,14 @@ Compose dispone de perfiles independientes:
 - `coordinator`: inicia únicamente el coordinador.
 - `storage`: inicia únicamente los seis nodos.
 - `monitor`: inicia el monitor periódico que persiste la salud en PostgreSQL.
+- `repair`: inicia la reparación y limpieza automática de réplicas.
 
 Para una prueba local completa, activa ambos perfiles:
 
 ```bash
 docker compose -f infrastructure/docker/compose.yaml \
-  --profile coordinator --profile storage --profile monitor up --build -d
+  --profile coordinator --profile storage --profile monitor --profile repair \
+  up --build -d
 ```
 
 El coordinador queda disponible en <http://localhost:8000> y la documentación
@@ -158,6 +169,7 @@ Consultar contenedores y logs:
 docker compose -f infrastructure/docker/compose.yaml ps
 docker compose -f infrastructure/docker/compose.yaml logs coordinator
 docker compose -f infrastructure/docker/compose.yaml logs health-monitor
+docker compose -f infrastructure/docker/compose.yaml logs replica-repair
 docker compose -f infrastructure/docker/compose.yaml logs node-math
 ```
 
@@ -165,7 +177,7 @@ Detener el sistema sin eliminar sus seis volúmenes:
 
 ```bash
 docker compose -f infrastructure/docker/compose.yaml \
-  --profile coordinator --profile storage --profile monitor down
+  --profile coordinator --profile storage --profile monitor --profile repair down
 ```
 
 No se debe usar `down -v` durante las pruebas normales porque elimina los
@@ -228,10 +240,10 @@ transiciones del monitor con el catálogo real.
 ## Funcionalidades todavía no implementadas
 
 Esta etapa no incluye frontend, importación automática de los metadatos JSON
-existentes, RabbitMQ, reparación automática,
+existentes, RabbitMQ, reconciliación general de subidas fallidas,
 autenticación, autorización, cifrado, balanceo de carga ni despliegue físico
-sobre Raspberry Pi. RF = 3 replica escrituras de forma síncrona y las lecturas
-realizan failover, pero todavía no existe reparación de réplicas.
+sobre Raspberry Pi. RF = 3 replica escrituras de forma síncrona, las lecturas
+realizan failover y el proceso independiente repara déficits confirmados.
 
 La Etapa 4.2 incorporó el esquema inicial del catálogo PostgreSQL, sus modelos,
 migración Alembic y datos institucionales reproducibles. La Etapa 4.3 conecta
@@ -245,6 +257,8 @@ failover transparente entre copias verificadas según
 [`docs/read-failover.md`](docs/read-failover.md). El monitor periódico y sus
 umbrales se explican en
 [`docs/health-monitoring.md`](docs/health-monitoring.md).
+La reparación automática, prioridad del nodo de origen y limpieza segura se
+documentan en [`docs/replica-repair.md`](docs/replica-repair.md).
 
 ## Etapa 4.4: versionamiento y eliminación lógica
 

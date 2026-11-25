@@ -101,6 +101,7 @@ class HealthMonitor:
                             node.health = "down"
 
                     if previous != node.health:
+                        node.health_changed_at = now
                         logger.warning(
                             "node health transition node_id=%s physical_host_id=%s "
                             "result=%s duration_ms=%.1f failures=%d successes=%d "

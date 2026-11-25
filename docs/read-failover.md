@@ -116,12 +116,14 @@ docker compose -f infrastructure/docker/compose.rf3-test.yaml up -d --wait
 
 Estos fallos temporales no cambian las réplicas a `corrupted` ni eliminan
 archivos. El monitoreo periódico puede activarse con el perfil `monitor`, como
-explica [`health-monitoring.md`](health-monitoring.md), pero no repara copias.
+explica [`health-monitoring.md`](health-monitoring.md). El proceso de
+[`reparación automática`](replica-repair.md) consume después esas señales sin
+formar parte de la solicitud de descarga.
 
 ## Limitaciones
 
-- No se recrean copias `missing` o `corrupted`.
-- No hay reconciliación de réplicas fallidas.
+- El failover no repara durante la descarga; solo clasifica la copia observada.
+- La reparación posterior no reconcilia subidas iniciales fallidas.
 - La salud es periódica y puede quedar desactualizada hasta el próximo ciclo y
   sus umbrales.
 - PostgreSQL continúa siendo un punto único de fallo.

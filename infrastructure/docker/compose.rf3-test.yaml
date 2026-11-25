@@ -8,6 +8,7 @@ x-storage-common: &storage-common
   environment: &storage-environment
     DATA_ROOT: /data
     MAX_UPLOAD_SIZE_MB: 10
+    REPAIR_INTERNAL_TOKEN: rf3-test-repair-token
   healthcheck:
     test:
       - CMD
@@ -93,6 +94,35 @@ services:
       HEALTH_CHECK_TIMEOUT_SECONDS: 0.5
       HEALTH_FAILURE_THRESHOLD: 3
       HEALTH_RECOVERY_THRESHOLD: 2
+
+  replica-repair-test:
+    profiles:
+      - repair
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.coordinator
+    command:
+      - python
+      - -m
+      - backend.repair.main
+    restart: unless-stopped
+    environment:
+      NODE_BIO_URL: http://node-bio-test:8000
+      NODE_PHY_URL: http://node-phy-test:8000
+      NODE_MATH_URL: http://node-math-test:8000
+      NODE_CHEM_URL: http://node-chem-test:8000
+      NODE_EARTH_URL: http://node-earth-test:8000
+      NODE_AGRO_URL: http://node-agro-test:8000
+      DATABASE_URL: postgresql+psycopg://yachayrepo_rf3_test:yachayrepo_rf3_test@postgres-test:5432/yachayrepo_rf3_test
+      MAX_UPLOAD_SIZE_MB: 10
+      REPAIR_ENABLED: "true"
+      REPAIR_INTERVAL_SECONDS: 1
+      REPAIR_DOWN_GRACE_SECONDS: 4
+      REPAIR_MAX_CONCURRENT_JOBS: 2
+      REPAIR_TRANSFER_TIMEOUT_SECONDS: 10
+      REPAIR_RETRY_BACKOFF_SECONDS: 1
+      REPAIR_EXCESS_CLEANUP_ENABLED: "true"
+      REPAIR_INTERNAL_TOKEN: rf3-test-repair-token
 
   node-bio-test:
     <<: *storage-common
