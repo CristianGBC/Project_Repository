@@ -1,4 +1,4 @@
-import { createRootRouteWithContext, createRoute, createRouter, redirect, Outlet, Link, useRouter, type RouterHistory } from '@tanstack/react-router'
+import { createRootRouteWithContext, createRoute, createRouter, redirect, Outlet, Link, useRouter, lazyRouteComponent, type RouterHistory } from '@tanstack/react-router'
 import { isAxiosError } from 'axios'
 import type { createSession } from '../api/session'
 import { errorMessage } from '../api/session'
@@ -7,7 +7,7 @@ import { Layout, Home, Profile } from '../features/dashboard'
 import { Button, Card, Skeleton } from '../components/ui'
 import { parseFilters } from '../api/academic'
 import { DocumentDetail, Explorer, HomeAcademic, SchoolDetail, Schools } from '../features/academic/portal'
-import { hasAnySchoolRole } from '../features/auth/permissions'
+import { canManageUsers, hasAnySchoolRole, isSuperAdmin } from '../features/auth/permissions'
 import { ProfessorDocument, ProfessorForm, ProfessorList } from '../features/professor/portal'
 
 export type Session = ReturnType<typeof createSession>
@@ -110,9 +110,54 @@ const newVersion = createRoute({ getParentRoute: () => professor, path: '/docume
   const { documentId } = newVersion.useParams()
   return <ProfessorDocument id={documentId} user={professor.useRouteContext().user} mode="version" />
 } })
+const administration = createRoute({
+  getParentRoute: () => protectedRoute, path: '/admin',
+  beforeLoad: ({ context }) => {
+    if (!canManageUsers(context.user)) throw redirect({ to: '/403', replace: true })
+  },
+  component: Outlet,
+})
+const Users = lazyRouteComponent(() => import('../features/administration/users'), 'AdminUsers')
+const AccountForm = lazyRouteComponent(() => import('../features/administration/users'), 'AccountForm')
+const UserDetail = lazyRouteComponent(() => import('../features/administration/users'), 'AdminUser')
+const Subjects = lazyRouteComponent(() => import('../features/administration/catalogs'), 'AdminSubjects')
+const Documents = lazyRouteComponent(() => import('../features/administration/documents'), 'AdminDocuments')
+const ManagedDocument = lazyRouteComponent(() => import('../features/administration/documents'), 'AdminDocument')
+const adminUsers = createRoute({ getParentRoute: () => administration, path: '/users', component: () => <Users actor={administration.useRouteContext().user} /> })
+const newUser = createRoute({ getParentRoute: () => administration, path: '/users/new', component: () => <AccountForm actor={administration.useRouteContext().user} /> })
+const readUser = createRoute({ getParentRoute: () => administration, path: '/users/$userId', component: () =>
+  <UserDetail id={readUser.useParams().userId} actor={administration.useRouteContext().user} mode="view" /> })
+function requireGlobal(user: Parameters<typeof isSuperAdmin>[0]) {
+  if (!isSuperAdmin(user)) throw redirect({ to: '/403', replace: true })
+}
+const editUser = createRoute({
+  getParentRoute: () => administration, path: '/users/$userId/edit',
+  beforeLoad: ({ context }) => requireGlobal(context.user),
+  component: () => <UserDetail id={editUser.useParams().userId} actor={administration.useRouteContext().user} mode="edit" />,
+})
+const adminMemberships = createRoute({ getParentRoute: () => administration, path: '/users/$userId/memberships', component: () =>
+  <UserDetail id={adminMemberships.useParams().userId} actor={administration.useRouteContext().user} mode="memberships" /> })
+const adminSubjects = createRoute({ getParentRoute: () => administration, path: '/subjects', component: () => <Subjects actor={administration.useRouteContext().user} /> })
+const adminTypes = createRoute({
+  getParentRoute: () => administration, path: '/document-types',
+  beforeLoad: ({ context }) => requireGlobal(context.user),
+  component: lazyRouteComponent(() => import('../features/administration/catalogs'), 'AdminTypes'),
+})
+const adminDocuments = createRoute({ getParentRoute: () => administration, path: '/documents', component: () => <Documents actor={administration.useRouteContext().user} /> })
+const readManagedDocument = createRoute({ getParentRoute: () => administration, path: '/documents/$documentId', component: () =>
+  <ManagedDocument id={readManagedDocument.useParams().documentId} /> })
+const editManagedDocument = createRoute({ getParentRoute: () => administration, path: '/documents/$documentId/edit', component: () =>
+  <ManagedDocument id={editManagedDocument.useParams().documentId} edit /> })
+const audit = createRoute({
+  getParentRoute: () => administration, path: '/audit',
+  beforeLoad: ({ context }) => requireGlobal(context.user),
+  component: lazyRouteComponent(() => import('../features/administration/documents'), 'SecurityAudit'),
+})
 export function makeRouter(session: Session, history?: RouterHistory) {
   const professorRoutes = professor.addChildren([owned, deleted, uploads, newDocument, ownedDetail, editDocument, newVersion])
-  const router = createRouter({ routeTree: root.addChildren([login, forbidden, protectedRoute.addChildren([home, profile, password, documents, documentDetail, schools, school, subject, professorRoutes])]), context: { session }, history, defaultPendingMs: 0 })
+  const adminRoutes = administration.addChildren([adminUsers, newUser, readUser, editUser, adminMemberships,
+    adminSubjects, adminTypes, adminDocuments, readManagedDocument, editManagedDocument, audit])
+  const router = createRouter({ routeTree: root.addChildren([login, forbidden, protectedRoute.addChildren([home, profile, password, documents, documentDetail, schools, school, subject, professorRoutes, adminRoutes])]), context: { session }, history, defaultPendingMs: 0 })
   session.onEnd(() => { void router.navigate({ to: '/login', replace: true }) })
   return router
 }

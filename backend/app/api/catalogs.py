@@ -101,7 +101,7 @@ def update_document_type(
         item = session.get(DocumentType, document_type_id)
         if item is None:
             raise HTTPException(status_code=404, detail="document type does not exist")
-        for field, value in payload.model_dump(exclude_unset=True).items():
+        for field, value in payload.model_dump(exclude_unset=True, exclude_none=True).items():
             setattr(item, field, value)
         session.add(
             SecurityAuditEvent(
@@ -110,5 +110,8 @@ def update_document_type(
                 resource_id=item.id, outcome="success",
             )
         )
-        session.flush()
+        try:
+            session.flush()
+        except IntegrityError as error:
+            raise HTTPException(status_code=409, detail="document type already exists") from error
         return {"id": item.id, "code": item.code, "name": item.name, "requires_subject": item.requires_subject, "is_active": item.is_active}

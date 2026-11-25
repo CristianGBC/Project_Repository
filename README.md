@@ -1,5 +1,8 @@
 # YachayRepo
 
+La Fase 7.4 añade el [panel administrativo](docs/frontend-administration.md)
+para cuentas, membresías, catálogos, documentos y auditoría.
+
 La Fase 7.3 incorpora el [portal del profesor](docs/frontend-professor-portal.md)
 para publicar, versionar y gestionar documentos propios.
 

@@ -1,5 +1,8 @@
 """Read-only operational views for authorized administrative frontends."""
 
+from datetime import date, datetime, time, timedelta, timezone
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
 
@@ -151,12 +154,26 @@ def security_audit(
     request: Request,
     principal: Principal = Depends(require_super_admin),
     limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    action: str | None = Query(None, max_length=100),
+    actor_user_id: UUID | None = Query(None),
+    resource_id: str | None = Query(None, max_length=100),
+    day: date | None = Query(None, lt=date.max),
 ) -> list[dict]:
+    query = select(SecurityAuditEvent)
+    if action:
+        query = query.where(SecurityAuditEvent.action == action)
+    if actor_user_id:
+        query = query.where(SecurityAuditEvent.actor_user_id == actor_user_id)
+    if resource_id:
+        query = query.where(SecurityAuditEvent.resource_id == resource_id)
+    if day:
+        start = datetime.combine(day, time.min, timezone.utc)
+        query = query.where(SecurityAuditEvent.created_at >= start, SecurityAuditEvent.created_at < start + timedelta(days=1))
     with request.app.state.session_factory() as session:
         rows = session.scalars(
-            select(SecurityAuditEvent)
-            .order_by(SecurityAuditEvent.created_at.desc())
-            .limit(limit)
+            query.order_by(SecurityAuditEvent.created_at.desc(), SecurityAuditEvent.id)
+            .offset(offset).limit(limit)
         ).all()
         return [
             {
@@ -166,7 +183,7 @@ def security_audit(
                 "resource_type": row.resource_type,
                 "resource_id": row.resource_id,
                 "outcome": row.outcome,
-                "detail": row.detail,
+                "detail": None,
                 "created_at": row.created_at,
             }
             for row in rows
