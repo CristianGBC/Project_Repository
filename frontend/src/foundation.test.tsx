@@ -25,6 +25,7 @@ let profile: User
 let invalid: number | undefined
 let expiry: number
 beforeEach(() => {
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   profile = user
   invalid = undefined
   expiry = 60000
@@ -32,7 +33,8 @@ beforeEach(() => {
   session = createSession(client)
   api.defaults.adapter = async config => {
     const data = config.url === '/auth/login' ? { access_token: 'test-token', expires_at: new Date(Date.now() + expiry).toISOString() }
-      : config.url === '/catalogs/schools' ? [{ id: 'math', name: 'Matemáticas' }] : profile
+      : config.url === '/catalogs/schools' ? [{ id: 'math', name: 'Matemáticas' }]
+      : ['/documents', '/subjects', '/catalogs/document-types'].includes(config.url ?? '') ? [] : profile
     const response = { config, data, headers: {}, status: invalid ?? 200, statusText: '' }
     if (invalid) throw new AxiosError('test', undefined, config, undefined, response)
     if (config.url === '/auth/me') expect(config.headers.get('Authorization')).toBe('Bearer test-token')
@@ -46,6 +48,7 @@ afterEach(() => {
   sessionStorage.clear()
   api.defaults.adapter = originalAdapter
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 function show(path: string) {
   const router = makeRouter(session, createMemoryHistory({ initialEntries: [path] }))
@@ -81,6 +84,21 @@ it('valida el perfil, resuelve escuelas y muestra solo enlaces implementados', a
   expect(await screen.findByRole('heading', { name: 'Ana Pérez' })).toBeTruthy()
   expect(await screen.findByText('Matemáticas')).toBeTruthy()
   expect(screen.queryByRole('link', { name: 'Usuarios' })).toBeNull()
+})
+it('explora con búsqueda diferida, reinicia la página al filtrar y limpia la URL', async () => {
+  await session.login(user.email, 'password')
+  const router = show('/documents?page=2')
+  const field = await screen.findByLabelText('Buscar por título')
+  const input = userEvent.setup()
+  await input.type(field, 'Álgebra')
+  expect(router.state.location.search.q).toBeUndefined()
+  expect(await screen.findByText('Página 1')).toBeTruthy()
+  expect(router.state.location.search.q).toBe('Álgebra')
+  await input.selectOptions(await screen.findByLabelText('Escuela'), 'math')
+  expect(router.state.location.search.school).toBe('math')
+  expect(router.state.location.search.q).toBe('Álgebra')
+  await input.click(screen.getByRole('button', { name: 'Limpiar filtros' }))
+  expect(router.state.location.searchStr).toBe('')
 })
 it('bloquea el perfil con cambio pendiente y termina la sesión después del cambio', async () => {
   profile = { ...user, must_change_password: true }

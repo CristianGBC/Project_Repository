@@ -15,7 +15,11 @@ export interface User {
 export interface School { id: string; code: string; name: string; is_active: boolean }
 interface Token { access_token: string; expires_at: string }
 const key = 'yachayrepo.session'
-export const keys = { me: ['auth', 'me'], schools: ['catalogs', 'schools'] } as const
+export const keys = {
+  me: ['auth', 'me'], schools: ['catalogs', 'schools'],
+  subjects: ['catalogs', 'subjects'], types: ['catalogs', 'document-types'],
+  documents: ['documents'],
+} as const
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
   timeout: 10000,

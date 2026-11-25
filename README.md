@@ -1,5 +1,8 @@
 # YachayRepo
 
+La Fase 7.2 agrega el [portal académico y visor PDF](docs/frontend-academic-portal.md)
+con búsqueda, filtros, historial y descargas autenticadas.
+
 La Fase 7.1 incorpora un frontend en español para iniciar sesión, consultar el
 perfil y cambiar la contraseña. Consulta la [guía del frontend](docs/frontend-foundation.md)
 para iniciarlo en `http://localhost:5173` y conectarlo al coordinador.
@@ -272,7 +275,7 @@ transiciones del monitor y reconciliación durable con el catálogo real.
 
 ## Funcionalidades todavía no implementadas
 
-Siguen pendientes el portal documental web, la importación automática de
+Siguen pendientes la gestión documental desde la web, la importación automática de
 metadatos JSON, RabbitMQ, OAuth externo, el envío de correos, el cifrado de
 archivos, el balanceo de carga y el despliegue físico en Raspberry Pi.
 RF = 3 replica escrituras de forma síncrona, las lecturas

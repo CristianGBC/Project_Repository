@@ -5,6 +5,8 @@ import { errorMessage } from '../api/session'
 import { Login, ChangePassword } from '../features/auth/screens'
 import { Layout, Home, Profile } from '../features/dashboard'
 import { Button, Card, Skeleton } from '../components/ui'
+import { parseFilters } from '../api/academic'
+import { DocumentDetail, Explorer, HomeAcademic, SchoolDetail, Schools } from '../features/academic/portal'
 
 export type Session = ReturnType<typeof createSession>
 const root = createRootRouteWithContext<{ session: Session }>()({
@@ -40,7 +42,43 @@ const protectedRoute = createRoute({
     return user.must_change_password ? <Outlet /> : <Layout user={user} logout={session.end}><Outlet /></Layout>
   },
 })
-const home = createRoute({ getParentRoute: () => protectedRoute, path: '/', component: () => <Home user={protectedRoute.useRouteContext().user} /> })
+const home = createRoute({ getParentRoute: () => protectedRoute, path: '/', component: AcademicHome })
+function AcademicHome() {
+  const navigate = home.useNavigate()
+  return <><Home user={protectedRoute.useRouteContext().user} /><HomeAcademic search={q => void navigate({ to: '/documents', search: { q } })} /></>
+}
+const documents = createRoute({
+  getParentRoute: () => protectedRoute, path: '/documents', validateSearch: parseFilters,
+  component: ExplorerRoute,
+})
+function ExplorerRoute() {
+  const filters = documents.useSearch()
+  const navigate = documents.useNavigate()
+  return <Explorer filters={filters} update={(search, replace) => void navigate({ search, replace })} />
+}
+const documentDetail = createRoute({
+  getParentRoute: () => protectedRoute, path: '/documents/$documentId',
+  validateSearch: (raw: Record<string, unknown>) => {
+    const version = Number(raw.version)
+    return { ...parseFilters(raw), version: Number.isSafeInteger(version) && version > 0 ? version : undefined }
+  },
+  component: DocumentRoute,
+})
+function DocumentRoute() {
+  const { documentId } = documentDetail.useParams()
+  const { version, ...filters } = documentDetail.useSearch()
+  const navigate = documentDetail.useNavigate()
+  return <DocumentDetail id={documentId} version={version} filters={filters} select={value => void navigate({ search: { ...filters, version: value } })} />
+}
+const schools = createRoute({ getParentRoute: () => protectedRoute, path: '/schools', component: Schools })
+const school = createRoute({
+  getParentRoute: () => protectedRoute, path: '/schools/$schoolId',
+  component: () => <SchoolDetail {...school.useParams()} />,
+})
+const subject = createRoute({
+  getParentRoute: () => protectedRoute, path: '/schools/$schoolId/subjects/$subjectId',
+  component: () => <SchoolDetail {...subject.useParams()} />,
+})
 const profile = createRoute({ getParentRoute: () => protectedRoute, path: '/profile', component: () => <Profile user={protectedRoute.useRouteContext().user} /> })
 const password = createRoute({ getParentRoute: () => protectedRoute, path: '/change-password', component: () => {
   const { user, session } = protectedRoute.useRouteContext()
@@ -48,7 +86,7 @@ const password = createRoute({ getParentRoute: () => protectedRoute, path: '/cha
 } })
 const forbidden = createRoute({ getParentRoute: () => root, path: '/403', component: () => <State title="Acceso restringido" /> })
 export function makeRouter(session: Session, history?: RouterHistory) {
-  const router = createRouter({ routeTree: root.addChildren([login, forbidden, protectedRoute.addChildren([home, profile, password])]), context: { session }, history, defaultPendingMs: 0 })
+  const router = createRouter({ routeTree: root.addChildren([login, forbidden, protectedRoute.addChildren([home, profile, password, documents, documentDetail, schools, school, subject])]), context: { session }, history, defaultPendingMs: 0 })
   session.onEnd(() => { void router.navigate({ to: '/login', replace: true }) })
   return router
 }

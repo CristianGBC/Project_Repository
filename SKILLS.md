@@ -48,6 +48,8 @@ python -m backend.app.seed
 
 ## Testing and Validation
 
+Para el portal, sigue la [guía académica](docs/frontend-academic-portal.md). Ejecuta las caídas de nodos exclusivamente con el proyecto Compose aislado.
+
 ```bash
 env -u DATABASE_URL -u TEST_DATABASE_URL python -m pytest backend/tests -q
 docker compose -f infrastructure/docker/compose.test.yaml up -d --wait

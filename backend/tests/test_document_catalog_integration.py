@@ -1429,6 +1429,39 @@ def test_replace_subjects_preserves_versions_and_enforces_type_rule(
     assert before == after
 
 
+def test_academic_search_paginates_filtered_published_documents(
+    catalog_session_factory,
+) -> None:
+    suffix = uuid4().hex[:8]
+    storage = memory_storage_handler()
+    ids = []
+    for number in range(2):
+        response = _request(
+            storage, catalog_session_factory, "/documents", method="POST",
+            data={"school_id": "school-math", "title": f"Álgebra {suffix} {number}"},
+            files={"file": (f"algebra-{number}.txt", b"notes", "text/plain")},
+        )
+        assert response.status_code == 201
+        ids.append(response.json()["document_id"])
+    for offset, expected_id in enumerate(reversed(ids)):
+        result = _request(
+            storage, catalog_session_factory, "/documents",
+            params={"q": f"ÁLGEBRA {suffix}", "limit": 1, "offset": offset},
+        )
+        assert result.status_code == 200
+        assert [item["document_id"] for item in result.json()] == [expected_id]
+    exact = _request(
+        storage, catalog_session_factory, "/documents",
+        params={"document_id": ids[0], "limit": 1},
+    )
+    assert [item["document_id"] for item in exact.json()] == ids[:1]
+    literal = _request(
+        storage, catalog_session_factory, "/documents",
+        params={"q": f"Álgebra {suffix}%", "limit": 1},
+    )
+    assert literal.json() == []
+
+
 def test_document_filters_and_subject_documents_exclude_soft_deleted(
     catalog_session_factory,
 ) -> None:

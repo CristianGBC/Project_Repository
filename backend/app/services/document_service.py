@@ -945,45 +945,50 @@ def list_documents(
     school_id: str | None,
     subject_id: UUID | None,
     document_type_id: str | None,
+    *,
+    document_id: UUID | None = None,
+    search: str | None = None,
+    offset: int = 0,
+    limit: int | None = None,
 ) -> list[DocumentMetadata]:
     if session_factory is None:
         raise _database_unavailable()
     canonical_school = canonical_school_id(school_id) if school_id else None
     try:
         with session_factory() as session:
-            query = select(Document.id).where(
+            query = select(Document.id, Document.school_id).join(
+                DocumentVersion, Document.current_version_id == DocumentVersion.id
+            ).where(
                 Document.deleted_at.is_(None),
-                Document.current_version_id.is_not(None),
+                DocumentVersion.status == "available",
             )
+            if document_id is not None:
+                query = query.where(Document.id == document_id)
+            if search and search.strip():
+                query = query.where(
+                    func.coalesce(Document.title, DocumentVersion.filename)
+                    .icontains(search.strip(), autoescape=True)
+                )
             if canonical_school is not None:
                 query = query.where(Document.school_id == canonical_school)
             if document_type_id is not None:
                 query = query.where(Document.document_type_id == document_type_id)
             if subject_id is not None:
-                query = query.join(
-                    document_subjects,
-                    document_subjects.c.document_id == Document.id,
-                ).where(document_subjects.c.subject_id == subject_id)
-            document_ids = session.scalars(query.distinct().order_by(Document.id)).all()
+                query = query.where(
+                    select(document_subjects.c.document_id).where(
+                        document_subjects.c.document_id == Document.id,
+                        document_subjects.c.subject_id == subject_id,
+                    ).exists()
+                )
+            rows = session.execute(
+                query.order_by(Document.created_at.desc(), Document.id)
+                .offset(offset).limit(limit)
+            ).all()
     except SQLAlchemyError as error:
         raise _database_unavailable() from error
 
     results: list[DocumentMetadata] = []
-    for document_id_value in document_ids:
-        if canonical_school is None:
-            try:
-                with session_factory() as session:
-                    document_school = session.scalar(
-                        select(Document.school_id).where(
-                            Document.id == document_id_value
-                        )
-                    )
-            except SQLAlchemyError as error:
-                raise _database_unavailable() from error
-        else:
-            document_school = canonical_school
-        if document_school is None:
-            continue
+    for document_id_value, document_school in rows:
         record = _catalog_record(
             session_factory,
             document_school,
