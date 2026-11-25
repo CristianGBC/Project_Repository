@@ -35,6 +35,12 @@ class CoordinatorSettings:
     repair_retry_backoff_seconds: float = 30.0
     repair_excess_cleanup_enabled: bool = True
     repair_internal_token: str = "!development-repair-token!"
+    reconciliation_enabled: bool = True
+    reconciliation_interval_seconds: float = 15.0
+    reconciliation_retry_backoff_seconds: float = 30.0
+    reconciliation_max_attempts: int = 10
+    reconciliation_max_concurrent_jobs: int = 2
+    reconciliation_transfer_timeout_seconds: float = 120.0
     database_url: str | None = None
     technical_user_id: UUID = UUID("7d14ef5d-3c61-4ac8-90b5-2bd3f0aa0431")
     technical_user_email: str = "development-operations@yachayrepo.invalid"
@@ -65,6 +71,24 @@ class CoordinatorSettings:
             raise ValueError("REPAIR_RETRY_BACKOFF_SECONDS must not be negative")
         if not self.repair_internal_token:
             raise ValueError("REPAIR_INTERNAL_TOKEN must not be empty")
+        if self.reconciliation_interval_seconds <= 0:
+            raise ValueError(
+                "RECONCILIATION_INTERVAL_SECONDS must be greater than zero"
+            )
+        if self.reconciliation_retry_backoff_seconds < 0:
+            raise ValueError(
+                "RECONCILIATION_RETRY_BACKOFF_SECONDS must not be negative"
+            )
+        if self.reconciliation_max_attempts < 1:
+            raise ValueError("RECONCILIATION_MAX_ATTEMPTS must be at least one")
+        if self.reconciliation_max_concurrent_jobs < 1:
+            raise ValueError(
+                "RECONCILIATION_MAX_CONCURRENT_JOBS must be at least one"
+            )
+        if self.reconciliation_transfer_timeout_seconds <= 0:
+            raise ValueError(
+                "RECONCILIATION_TRANSFER_TIMEOUT_SECONDS must be greater than zero"
+            )
 
 
 NODE_IDENTITIES: tuple[tuple[str, str, str], ...] = (
@@ -142,6 +166,24 @@ def load_settings() -> CoordinatorSettings:
         repair_backoff = float(os.getenv("REPAIR_RETRY_BACKOFF_SECONDS", "30"))
     except ValueError as error:
         raise ValueError("replica repair settings must be numeric") from error
+    try:
+        reconciliation_interval = float(
+            os.getenv("RECONCILIATION_INTERVAL_SECONDS", "15")
+        )
+        reconciliation_backoff = float(
+            os.getenv("RECONCILIATION_RETRY_BACKOFF_SECONDS", "30")
+        )
+        reconciliation_attempts = int(
+            os.getenv("RECONCILIATION_MAX_ATTEMPTS", "10")
+        )
+        reconciliation_concurrency = int(
+            os.getenv("RECONCILIATION_MAX_CONCURRENT_JOBS", "2")
+        )
+        reconciliation_timeout = float(
+            os.getenv("RECONCILIATION_TRANSFER_TIMEOUT_SECONDS", "120")
+        )
+    except ValueError as error:
+        raise ValueError("upload reconciliation settings must be numeric") from error
 
     def boolean_setting(name: str, default: str) -> bool:
         value = os.getenv(name, default).strip().lower()
@@ -171,6 +213,14 @@ def load_settings() -> CoordinatorSettings:
         repair_internal_token=os.getenv(
             "REPAIR_INTERNAL_TOKEN", "!development-repair-token!"
         ),
+        reconciliation_enabled=boolean_setting(
+            "RECONCILIATION_ENABLED", "true"
+        ),
+        reconciliation_interval_seconds=reconciliation_interval,
+        reconciliation_retry_backoff_seconds=reconciliation_backoff,
+        reconciliation_max_attempts=reconciliation_attempts,
+        reconciliation_max_concurrent_jobs=reconciliation_concurrency,
+        reconciliation_transfer_timeout_seconds=reconciliation_timeout,
         database_url=os.getenv("DATABASE_URL"),
         technical_user_id=UUID(
             os.getenv(

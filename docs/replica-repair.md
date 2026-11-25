@@ -1,9 +1,11 @@
 # Reparación automática de réplicas
 
 YachayRepo ejecuta `replica-repair` como proceso independiente del coordinador
-y del monitor. Solo reconcilia versiones `available`; no reanuda subidas cuya
-versión quedó `pending` o `failed`, no cambia `target_replicas` y también
-protege las versiones históricas y documentos eliminados lógicamente.
+y del monitor. Solo reconcilia versiones `available`; las subidas cuya versión
+quedó `pending` o `failed` corresponden al proceso descrito en
+[`upload-reconciliation.md`](upload-reconciliation.md). Ninguno cambia
+`target_replicas`, y ambos protegen versiones históricas y documentos
+eliminados lógicamente.
 
 ## Arquitectura y configuración
 
@@ -149,6 +151,6 @@ para una red de Raspberry Pi.
 
 PostgreSQL sigue siendo un punto único de fallo. No existe transferencia directa
 nodo a nodo, reparación distribuida sin catálogo, limpieza de residuos ajenos
-al catálogo, reconciliación general de subidas fallidas ni dashboard. El token
-compartido es una protección interna mínima hasta que exista autenticación de
-servicios.
+al catálogo ni dashboard. La reconciliación general de subidas fallidas se
+ejecuta en un proceso separado. El token compartido es una protección interna
+mínima hasta que exista autenticación de servicios.

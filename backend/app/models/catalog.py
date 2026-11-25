@@ -22,7 +22,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import INET, UUID as PostgreSQLUUID
+from sqlalchemy.dialects.postgresql import INET, JSONB, UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.models.base import Base
@@ -297,3 +297,57 @@ class DocumentReplica(Base):
     stored_at: Mapped[datetime | None] = mapped_column(timestamp)
     verified_at: Mapped[datetime | None] = mapped_column(timestamp)
     repair_after: Mapped[datetime | None] = mapped_column(timestamp)
+
+
+class ReconciliationJob(Base):
+    __tablename__ = "reconciliation_jobs"
+    __table_args__ = (
+        UniqueConstraint("version_id", name="uq_reconciliation_job_version"),
+        CheckConstraint(
+            "status IN ('pending', 'in_progress', 'retry_wait', 'completed', 'failed', 'cancelled')",
+            name="ck_reconciliation_job_status",
+        ),
+        CheckConstraint("attempts >= 0", name="ck_reconciliation_job_attempts"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    version_id: Mapped[UUID] = mapped_column(ForeignKey("document_versions.id"))
+    status: Mapped[str] = mapped_column(String(20), server_default=text("'pending'"))
+    attempts: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    next_attempt_at: Mapped[datetime | None] = mapped_column(timestamp)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(timestamp)
+
+
+class ReconciliationAttempt(Base):
+    __tablename__ = "reconciliation_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "job_id", "attempt_number", name="uq_reconciliation_attempt_number"
+        ),
+        CheckConstraint("attempt_number > 0", name="ck_reconciliation_attempt_positive"),
+        CheckConstraint(
+            "outcome IN ('in_progress', 'completed', 'retry', 'failed', 'cancelled')",
+            name="ck_reconciliation_attempt_outcome",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    job_id: Mapped[UUID] = mapped_column(ForeignKey("reconciliation_jobs.id"))
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(timestamp)
+    outcome: Mapped[str] = mapped_column(
+        String(20), server_default=text("'in_progress'")
+    )
+    destination_node_id: Mapped[str | None] = mapped_column(
+        ForeignKey("storage_nodes.id")
+    )
+    replica_snapshot: Mapped[dict] = mapped_column(JSONB)
+    detail: Mapped[str | None] = mapped_column(Text)

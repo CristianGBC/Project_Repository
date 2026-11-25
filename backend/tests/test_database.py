@@ -25,10 +25,12 @@ EXPECTED_TABLES = {
     "storage_nodes",
     "subjects",
     "document_replicas",
+    "reconciliation_jobs",
+    "reconciliation_attempts",
 }
 
 
-def test_model_metadata_declares_the_eleven_catalog_tables() -> None:
+def test_model_metadata_declares_the_thirteen_catalog_tables() -> None:
     assert set(Base.metadata.tables) == EXPECTED_TABLES
 
 

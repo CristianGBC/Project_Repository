@@ -7,6 +7,9 @@ COMPOSE_FILE = (
     Path(__file__).resolve().parents[2] / "infrastructure" / "docker" / "compose.yaml"
 )
 COMPOSE_TEXT = COMPOSE_FILE.read_text(encoding="utf-8")
+RF3_TEST_COMPOSE_TEXT = (
+    COMPOSE_FILE.with_name("compose.rf3-test.yaml").read_text(encoding="utf-8")
+)
 
 
 def test_compose_declares_independent_profiles() -> None:
@@ -15,6 +18,7 @@ def test_compose_declares_independent_profiles() -> None:
     assert "depends_on:" not in COMPOSE_TEXT
     assert "profiles:\n      - monitor" in COMPOSE_TEXT
     assert "profiles:\n      - repair" in COMPOSE_TEXT
+    assert "profiles:\n      - reconciliation" in COMPOSE_TEXT
 
 
 def test_compose_publishes_exact_storage_ports() -> None:
@@ -39,3 +43,12 @@ def test_compose_passes_configurable_urls_to_coordinator() -> None:
     assert "HEALTH_RECOVERY_THRESHOLD: ${HEALTH_RECOVERY_THRESHOLD:-2}" in COMPOSE_TEXT
     assert "REPAIR_DOWN_GRACE_SECONDS: ${REPAIR_DOWN_GRACE_SECONDS:-60}" in COMPOSE_TEXT
     assert "REPAIR_MAX_CONCURRENT_JOBS: ${REPAIR_MAX_CONCURRENT_JOBS:-2}" in COMPOSE_TEXT
+    assert "RECONCILIATION_MAX_ATTEMPTS: ${RECONCILIATION_MAX_ATTEMPTS:-10}" in COMPOSE_TEXT
+    assert "RECONCILIATION_MAX_CONCURRENT_JOBS: ${RECONCILIATION_MAX_CONCURRENT_JOBS:-2}" in COMPOSE_TEXT
+
+
+def test_rf3_compose_can_exercise_rf1_without_editing_the_file() -> None:
+    assert (
+        "REPLICATION_FACTOR: ${RF3_TEST_REPLICATION_FACTOR:-3}"
+        in RF3_TEST_COMPOSE_TEXT
+    )

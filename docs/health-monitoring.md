@@ -142,6 +142,7 @@ y la ubicación del servicio que ejecuta el monitor.
 
 La reparación automática se ejecuta en el proceso independiente descrito en
 [`replica-repair.md`](replica-repair.md); el monitor nunca transfiere archivos.
-Todavía no existen reconciliación general de subidas, historial persistente de
-cada comprobación ni dashboard. Los contadores no
+La reconciliación de subidas incompletas y su auditoría persistente se describen
+en [`upload-reconciliation.md`](upload-reconciliation.md). Todavía no existen
+historial persistente de cada comprobación del monitor ni dashboard. Los contadores no
 sobreviven al reinicio y PostgreSQL continúa siendo un punto único de fallo.

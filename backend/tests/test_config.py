@@ -176,3 +176,57 @@ def test_invalid_replica_repair_settings_are_rejected(
     monkeypatch.setenv(variable, value)
     with pytest.raises(ValueError):
         load_settings()
+
+
+def test_upload_reconciliation_defaults_and_overrides(monkeypatch) -> None:
+    variables = (
+        "RECONCILIATION_ENABLED",
+        "RECONCILIATION_INTERVAL_SECONDS",
+        "RECONCILIATION_RETRY_BACKOFF_SECONDS",
+        "RECONCILIATION_MAX_ATTEMPTS",
+        "RECONCILIATION_MAX_CONCURRENT_JOBS",
+        "RECONCILIATION_TRANSFER_TIMEOUT_SECONDS",
+    )
+    for variable in variables:
+        monkeypatch.delenv(variable, raising=False)
+    defaults = load_settings()
+    assert defaults.reconciliation_enabled is True
+    assert defaults.reconciliation_interval_seconds == 15
+    assert defaults.reconciliation_retry_backoff_seconds == 30
+    assert defaults.reconciliation_max_attempts == 10
+    assert defaults.reconciliation_max_concurrent_jobs == 2
+    assert defaults.reconciliation_transfer_timeout_seconds == 120
+
+    monkeypatch.setenv("RECONCILIATION_ENABLED", "false")
+    monkeypatch.setenv("RECONCILIATION_INTERVAL_SECONDS", "2")
+    monkeypatch.setenv("RECONCILIATION_RETRY_BACKOFF_SECONDS", "1")
+    monkeypatch.setenv("RECONCILIATION_MAX_ATTEMPTS", "4")
+    monkeypatch.setenv("RECONCILIATION_MAX_CONCURRENT_JOBS", "3")
+    monkeypatch.setenv("RECONCILIATION_TRANSFER_TIMEOUT_SECONDS", "8")
+    configured = load_settings()
+    assert configured.reconciliation_enabled is False
+    assert configured.reconciliation_interval_seconds == 2
+    assert configured.reconciliation_retry_backoff_seconds == 1
+    assert configured.reconciliation_max_attempts == 4
+    assert configured.reconciliation_max_concurrent_jobs == 3
+    assert configured.reconciliation_transfer_timeout_seconds == 8
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("RECONCILIATION_ENABLED", "yes"),
+        ("RECONCILIATION_INTERVAL_SECONDS", "0"),
+        ("RECONCILIATION_RETRY_BACKOFF_SECONDS", "-1"),
+        ("RECONCILIATION_MAX_ATTEMPTS", "0"),
+        ("RECONCILIATION_MAX_CONCURRENT_JOBS", "0"),
+        ("RECONCILIATION_TRANSFER_TIMEOUT_SECONDS", "0"),
+        ("RECONCILIATION_INTERVAL_SECONDS", "invalid"),
+    ],
+)
+def test_invalid_upload_reconciliation_settings_are_rejected(
+    monkeypatch, variable: str, value: str
+) -> None:
+    monkeypatch.setenv(variable, value)
+    with pytest.raises(ValueError):
+        load_settings()

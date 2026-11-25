@@ -27,6 +27,10 @@ flowchart TD
     Repair -->|transferencia verificada| Chem
     Repair -->|transferencia verificada| Earth
     Repair -->|transferencia verificada| Agro
+    Reconciler[Reconciliador de subidas] -->|trabajos y auditoría| PostgreSQL
+    Reconciler -->|verifica y completa réplicas| Bio
+    Reconciler -->|verifica y completa réplicas| Math
+    Reconciler -->|verifica y completa réplicas| Agro
     Coordinator -->|GET /health| Bio[node-bio]
     Coordinator -->|GET /health| Phy[node-phy]
     Coordinator -->|GET /health| Math[node-math]
@@ -85,6 +89,8 @@ Project_Repository/
 │   │   └── main.py
 │   ├── repair/
 │   │   └── main.py
+│   ├── reconciliation/
+│   │   └── main.py
 │   ├── tests/
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -114,12 +120,14 @@ Compose dispone de perfiles independientes:
 - `storage`: inicia únicamente los seis nodos.
 - `monitor`: inicia el monitor periódico que persiste la salud en PostgreSQL.
 - `repair`: inicia la reparación y limpieza automática de réplicas.
+- `reconciliation`: recupera y publica subidas iniciales incompletas.
 
-Para una prueba local completa, activa ambos perfiles:
+Para una prueba local completa, activa todos los perfiles:
 
 ```bash
 docker compose -f infrastructure/docker/compose.yaml \
   --profile coordinator --profile storage --profile monitor --profile repair \
+  --profile reconciliation \
   up --build -d
 ```
 
@@ -170,6 +178,7 @@ docker compose -f infrastructure/docker/compose.yaml ps
 docker compose -f infrastructure/docker/compose.yaml logs coordinator
 docker compose -f infrastructure/docker/compose.yaml logs health-monitor
 docker compose -f infrastructure/docker/compose.yaml logs replica-repair
+docker compose -f infrastructure/docker/compose.yaml logs upload-reconciler
 docker compose -f infrastructure/docker/compose.yaml logs node-math
 ```
 
@@ -177,7 +186,8 @@ Detener el sistema sin eliminar sus seis volúmenes:
 
 ```bash
 docker compose -f infrastructure/docker/compose.yaml \
-  --profile coordinator --profile storage --profile monitor --profile repair down
+  --profile coordinator --profile storage --profile monitor --profile repair \
+  --profile reconciliation down
 ```
 
 No se debe usar `down -v` durante las pruebas normales porque elimina los
@@ -220,8 +230,8 @@ python -m pytest backend/tests
 
 Las pruebas unitarias no requieren Docker ni Raspberry Pi y utilizan el
 transporte de prueba de HTTPX. Las pruebas de integración usan el PostgreSQL
-aislado de `compose.test.yaml`; verifican persistencia, RF=1/RF=3, failover y
-transiciones del monitor con el catálogo real.
+aislado de `compose.test.yaml`; verifican persistencia, RF=1/RF=3, failover,
+transiciones del monitor y reconciliación durable con el catálogo real.
 
 ## Comportamiento actual
 
@@ -240,8 +250,8 @@ transiciones del monitor con el catálogo real.
 ## Funcionalidades todavía no implementadas
 
 Esta etapa no incluye frontend, importación automática de los metadatos JSON
-existentes, RabbitMQ, reconciliación general de subidas fallidas,
-autenticación, autorización, cifrado, balanceo de carga ni despliegue físico
+existentes, RabbitMQ, autenticación, autorización, cifrado, balanceo de carga
+ni despliegue físico
 sobre Raspberry Pi. RF = 3 replica escrituras de forma síncrona, las lecturas
 realizan failover y el proceso independiente repara déficits confirmados.
 
@@ -259,6 +269,8 @@ umbrales se explican en
 [`docs/health-monitoring.md`](docs/health-monitoring.md).
 La reparación automática, prioridad del nodo de origen y limpieza segura se
 documentan en [`docs/replica-repair.md`](docs/replica-repair.md).
+La recuperación durable e idempotente de subidas incompletas se documenta en
+[`docs/upload-reconciliation.md`](docs/upload-reconciliation.md).
 
 ## Etapa 4.4: versionamiento y eliminación lógica
 
