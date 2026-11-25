@@ -119,12 +119,20 @@ async def search_documents(
     school_id: str | None = Query(None),
     subject_id: UUID | None = Query(None),
     document_type_id: str | None = Query(None),
+    document_id: UUID | None = Query(None),
+    q: str | None = Query(None, max_length=200),
+    offset: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=100),
 ) -> list[DocumentMetadata]:
     return list_documents(
         request.app.state.session_factory,
         school_id,
         subject_id,
         document_type_id,
+        document_id=document_id,
+        search=q,
+        offset=offset,
+        limit=limit,
     )
 
 

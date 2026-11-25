@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Repositorio institucional académico de Yachay Tech para publicar, clasificar, versionar y recuperar documentos aun cuando fallen nodos de almacenamiento. El backend gestiona escuelas, materias, tipos documentales, usuarios y permisos. La interfaz inicial incluye autenticación y perfil. El portal documental y la distribución física definitiva siguen pendientes.
+Repositorio institucional académico de Yachay Tech para publicar, clasificar, versionar y recuperar documentos aun cuando fallen nodos de almacenamiento. El backend gestiona escuelas, materias, tipos documentales, usuarios y permisos. La interfaz incorpora autenticación, perfil y consulta académica con visor PDF.
 
 ## Technology Stack
 
@@ -59,11 +59,14 @@ El catálogo central registra identidad, permisos, metadatos y estados. Los nodo
 - Implementados catálogo PostgreSQL, versionado y borrado lógico, tipos y materias, RF3, failover, monitor, reparación, reconciliación inicial y autenticación/RBAC. El código y Compose demuestran disponibilidad de las funciones, y su activación depende de la configuración del despliegue.
 - Parcial. Compatibilidad con JSON histórico sin importación automática. El rate limiter vive por proceso y la sesión utiliza exclusivamente access tokens.
 - Fase 7.1. SPA de autenticación y perfil en español con React, TanStack Router y Query, Axios y modo claro. Playwright comprobó el flujo contra FastAPI y PostgreSQL aislados.
-- Pendientes documentados. Explorador y visor PDF, despliegue físico Raspberry Pi, HA de PostgreSQL, OAuth, correo, cifrado de archivos y balanceo. RabbitMQ pertenece al prototipo en el estado observado.
+- Fase 7.2. Consulta de escuelas y materias, búsqueda paginada, historial, descargas autenticadas y visor PDF con worker local. El E2E de laboratorio valida el visor con failover y compara SHA-256.
+- Pendientes documentados. Portal de escritura del profesor, paneles de administración y operaciones, despliegue físico Raspberry Pi, HA de PostgreSQL, OAuth, correo, cifrado de archivos y balanceo. RabbitMQ pertenece al prototipo en el estado observado.
 - Validación local de este corte. Pytest se detuvo al importar `argon2` en la virtualenv existente, antes de recolectar pruebas. La guía de RBAC registra un E2E del 24 de noviembre con RF3, failover, reconciliación y revocación. Ese resultado es histórico. El estado de instancias en ejecución y la topología física no se comprobaron.
 - Algunas guías de etapas anteriores conservan referencias a RF=1 o revisiones antiguas. Comprueba el head en el código y el estado de la base de destino antes de usar procedimientos históricos.
 
 ## Documentation Index
+
+- [Portal académico 7.2](docs/frontend-academic-portal.md) para consulta paginada, versiones, visor PDF y pruebas de failover en navegador.
 
 - [Frontend 7.1](docs/frontend-foundation.md) para levantar la SPA, integrar autenticación y ejecutar sus pruebas.
 

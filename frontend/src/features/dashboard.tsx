@@ -1,20 +1,22 @@
 import type { ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { House, UserRound, Menu, LogOut, ChevronDown, Building2, KeyRound } from 'lucide-react'
+import { House, UserRound, Menu, LogOut, ChevronDown, Building2, KeyRound, Library } from 'lucide-react'
 import { api, keys, errorMessage, type School, type User } from '../api/session'
 import { Alert, Avatar, Badge, Button, Card, Dialog, DropdownMenu, Separator, Sheet, Skeleton } from '../components/ui'
 import { Brand } from './auth/screens'
 
 const navigation = [
   { to: '/', label: 'Inicio', icon: House },
+  { to: '/documents', label: 'Explorar documentos', icon: Library },
+  { to: '/schools', label: 'Escuelas', icon: Building2 },
   { to: '/profile', label: 'Mi perfil', icon: UserRound },
 ] as const
 const roles = { student: 'Estudiante', professor: 'Profesor', school_admin: 'Administrador de escuela' }
 const displayName = (user: User) => [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email
 function Navigation({ mobile = false }: { mobile?: boolean }) {
   return <nav aria-label="Navegación principal">{navigation.map(({ to, label, icon: Icon }) => {
-    const link = <Link key={to} to={to} activeOptions={{ exact: true }} className="nav-link"><Icon size={19} />{label}</Link>
+    const link = <Link key={to} to={to} search={{}} activeOptions={{ exact: to === '/' }} className="nav-link"><Icon size={19} />{label}</Link>
     return mobile ? <Dialog.Close key={to} asChild>{link}</Dialog.Close> : link
   })}</nav>
 }
@@ -26,7 +28,7 @@ export function Layout({ user, logout, children }: { user: User; logout: () => v
     </aside>
     <div className="workspace"><header className="topbar">
       <div className="heading"><div className="mobile-menu"><Sheet trigger={<Button variant="ghost" aria-label="Abrir menú"><Menu size={22} /></Button>}><Navigation mobile /></Sheet></div>
-        <strong>{navigation.find(item => item.to === pathname)?.label ?? 'Cambiar contraseña'}</strong></div>
+        <strong>{navigation.find(item => item.to === pathname || (item.to !== '/' && pathname.startsWith(item.to + '/')))?.label ?? 'Cambiar contraseña'}</strong></div>
       <DropdownMenu.Root><DropdownMenu.Trigger asChild>
         <Button variant="ghost" aria-label="Menú de cuenta"><Avatar name={displayName(user)} /><span className="account-name">{displayName(user)}</span><ChevronDown size={16} /></Button>
       </DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={8} className="dropdown">

@@ -76,6 +76,26 @@ form { display: grid; gap: 1rem; margin: 1.6rem 0 1rem; }
 .mobile-brand, .mobile-menu { display: none; }
 .skip { position: absolute; left: -9999px; }
 .skip:focus { left: 1rem; top: 1rem; background: white; z-index: 4; }
+.academic-stack { display: grid; gap: 1rem; min-width: 0; }
+.academic-stack a:not(.button), .academic-grid a { color: var(--primary); text-decoration: underline; text-underline-offset: .2rem; }
+.academic-stack h2 { margin-bottom: .45rem; }
+.academic-grid, .academic-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .85rem; }
+.academic-grid .card { overflow-wrap: anywhere; }
+.academic-grid .badge { margin: .4rem .35rem 0 0; }
+.academic-search { display: flex; flex-wrap: wrap; margin: .75rem 0; }
+.academic-search input { flex: 1 1 15rem; }
+.academic-filters select { display: block; width: 100%; border: 1px solid var(--border); border-radius: .55rem; min-height: 3rem; padding: .55rem; background: white; }
+.academic-filters + button { margin-top: .75rem; }
+.document-detail { display: grid; grid-template-columns: minmax(0, 2.5fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.version-row { border-top: 1px solid var(--border); padding: .5rem 0; overflow-wrap: anywhere; }
+.pdf-frame { min-width: 0; background: white; border: 1px solid var(--border); border-radius: .6rem; padding: .5rem; }
+.pdf-frame:fullscreen { overflow: auto; }
+.pdf-controls { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.pdf-controls input { width: 4rem; border: 1px solid var(--border); padding: .3rem; }
+.pdf-page-form { display: flex; align-items: center; gap: .3rem; margin: 0; }
+.pdf-area { max-width: 100%; overflow: auto; background: var(--background); padding: .5rem; }
+.pdf-area canvas { display: block; max-width: none; margin-inline: auto; }
+@media (max-width: 950px) { .document-detail { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 760px) {
   .identity, .sidebar, .account-name { display: none; }
   .login, .layout { display: block; }
