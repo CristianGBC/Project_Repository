@@ -4,13 +4,23 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from backend.app.api import documents_router, router, subjects_router
+from backend.app.api import (
+    authentication_router,
+    catalogs_router,
+    documents_router,
+    operations_router,
+    router,
+    subjects_router,
+    users_router,
+)
 from backend.app.config import CoordinatorSettings, load_settings
 from backend.app.database import create_database_engine, create_session_factory
+from backend.app.services.auth_service import LoginThrottle
 
 
 def create_app(
@@ -35,6 +45,10 @@ def create_app(
             timeout=coordinator_settings.transfer_timeout_seconds
         )
         application.state.session_factory = configured_session_factory
+        application.state.login_throttle = LoginThrottle(
+            coordinator_settings.auth_login_max_attempts,
+            coordinator_settings.auth_login_window_seconds,
+        )
         try:
             yield
         finally:
@@ -48,9 +62,20 @@ def create_app(
         version="0.1.0",
         lifespan=lifespan,
     )
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(coordinator_settings.cors_allowed_origins),
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
     application.include_router(router)
+    application.include_router(authentication_router)
+    application.include_router(catalogs_router)
     application.include_router(documents_router)
+    application.include_router(operations_router)
     application.include_router(subjects_router)
+    application.include_router(users_router)
     return application
 
 

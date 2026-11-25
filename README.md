@@ -31,6 +31,7 @@ flowchart TD
     Reconciler -->|verifica y completa réplicas| Bio
     Reconciler -->|verifica y completa réplicas| Math
     Reconciler -->|verifica y completa réplicas| Agro
+    User[Usuario autenticado] -->|JWT y RBAC| Coordinator
     Coordinator -->|GET /health| Bio[node-bio]
     Coordinator -->|GET /health| Phy[node-phy]
     Coordinator -->|GET /health| Math[node-math]
@@ -91,6 +92,9 @@ Project_Repository/
 │   │   └── main.py
 │   ├── reconciliation/
 │   │   └── main.py
+│   ├── auth/
+│   │   ├── security.py
+│   │   └── bootstrap_admin.py
 │   ├── tests/
 │   ├── requirements.txt
 │   └── requirements-dev.txt
@@ -142,6 +146,21 @@ completa y los comandos separados para ambos equipos están en
 
 La arquitectura documental, endpoints, persistencia e integridad se detallan en
 [`docs/document-storage.md`](docs/document-storage.md).
+
+## Autenticación y roles
+
+La API académica requiere JWT. No existe registro público: SUPER_ADMIN o un
+SCHOOL_ADMIN dentro de su alcance crean las cuentas. Los roles por escuela son
+`student`, `professor` y `school_admin`; `super_admin` es global. Únicamente una
+membresía `professor` vigente autoriza subidas a esa escuela, incluso si el
+usuario también es administrador. Todos los usuarios autenticados pueden leer
+documentos publicados de todas las escuelas.
+
+Las contraseñas se almacenan con Argon2id. Para crear el primer administrador,
+aplica migraciones y ejecuta `python -m backend.auth.bootstrap_admin`; el
+comando solicita la contraseña de forma oculta si no se proporciona por
+entorno. La configuración, matriz de permisos, endpoints y ejemplos están en
+[`docs/authentication-rbac.md`](docs/authentication-rbac.md).
 
 ## Operaciones documentales
 
@@ -250,8 +269,8 @@ transiciones del monitor y reconciliación durable con el catálogo real.
 ## Funcionalidades todavía no implementadas
 
 Esta etapa no incluye frontend, importación automática de los metadatos JSON
-existentes, RabbitMQ, autenticación, autorización, cifrado, balanceo de carga
-ni despliegue físico
+existentes, RabbitMQ, OAuth externo, envío de correos, cifrado de archivos,
+balanceo de carga ni despliegue físico
 sobre Raspberry Pi. RF = 3 replica escrituras de forma síncrona, las lecturas
 realizan failover y el proceso independiente repara déficits confirmados.
 

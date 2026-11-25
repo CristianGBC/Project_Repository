@@ -258,6 +258,7 @@ def _create_pending_catalog_records(
     description: str | None,
     document_type_id: str | None,
     subject_ids: list[UUID] | None,
+    actor_user_id: UUID | None = None,
 ) -> tuple[
     Document,
     DocumentVersion,
@@ -278,7 +279,13 @@ def _create_pending_catalog_records(
                     raise HTTPException(400, "unknown or inactive document_type_id")
             subjects = _active_subjects(session, subject_ids, school.id)
             _validate_subject_requirement(document_type, subjects)
-            user = _technical_user(session, settings)
+            user = (
+                session.get(User, actor_user_id)
+                if actor_user_id is not None
+                else _technical_user(session, settings)
+            )
+            if user is None:
+                raise HTTPException(401, "authenticated user no longer exists")
             session.flush()
             nodes = _select_storage_nodes(session, settings, school_id)
             document = Document(
@@ -287,6 +294,7 @@ def _create_pending_catalog_records(
                 description=description,
                 school_id=school.id,
                 created_by=user.id,
+                owner_id=(user.id if actor_user_id is not None else None),
                 document_type_id=(document_type.id if document_type else None),
                 visibility="school",
             )
@@ -477,10 +485,12 @@ async def _store_on_node(
     prepared_file: BinaryIO,
     metadata: DocumentMetadata,
     node: NodeSettings,
+    storage_internal_token: str,
 ) -> StoredDocumentResponse:
     try:
         response = await client.put(
             f"{node.url}/files/{metadata.document_id}",
+            headers={"X-Storage-Token": storage_internal_token},
             data={
                 "filename": metadata.filename,
                 "school_id": node.node_id,
@@ -546,7 +556,9 @@ async def _replicate_to_nodes(
             checksum,
             created_at,
         )
-        return await _store_on_node(client, upload, prepared_copy, metadata, node)
+        return await _store_on_node(
+            client, upload, prepared_copy, metadata, node, settings.storage_internal_token
+        )
 
     try:
         results = await asyncio.gather(
@@ -604,7 +616,9 @@ async def _legacy_upload_document(
         uuid4(), filename, node, size_bytes, checksum, datetime.now(timezone.utc)
     )
     try:
-        return await _store_on_node(client, upload, prepared_file, metadata, node)
+        return await _store_on_node(
+            client, upload, prepared_file, metadata, node, settings.storage_internal_token
+        )
     finally:
         prepared_file.close()
 
@@ -619,6 +633,7 @@ async def upload_document(
     description: str | None = None,
     document_type_id: str | None = None,
     subject_ids: list[UUID] | None = None,
+    actor_user_id: UUID | None = None,
 ) -> StoredDocumentResponse:
     if session_factory is None:
         return await _legacy_upload_document(client, settings, upload, school_id)
@@ -641,6 +656,7 @@ async def upload_document(
             description,
             document_type_id,
             subject_ids,
+            actor_user_id,
         )
     )
     created_at = document.created_at or datetime.now(timezone.utc)
@@ -682,6 +698,7 @@ async def upload_document(
         version_number=1,
         version_status="available",
         target_replicas=settings.replication_factor,
+        owner_id=document.owner_id,
     )
 
 
@@ -700,6 +717,7 @@ def _create_pending_version(
     mime_type: str,
     size_bytes: int,
     checksum: str,
+    actor_user_id: UUID | None = None,
 ) -> tuple[
     Document,
     DocumentVersion,
@@ -719,7 +737,13 @@ def _create_pending_version(
             school = session.get(School, document.school_id)
             if school is None or not school.is_active:
                 raise HTTPException(409, "document school is unavailable")
-            user = _technical_user(session, settings)
+            user = (
+                session.get(User, actor_user_id)
+                if actor_user_id is not None
+                else _technical_user(session, settings)
+            )
+            if user is None:
+                raise HTTPException(401, "authenticated user no longer exists")
             document_type = (
                 session.get(DocumentType, document.document_type_id)
                 if document.document_type_id
@@ -776,6 +800,7 @@ async def upload_document_version(
     upload: UploadFile,
     document_id: str,
     session_factory: sessionmaker[Session] | None,
+    actor_user_id: UUID | None = None,
 ) -> StoredDocumentResponse:
     if session_factory is None:
         raise _database_unavailable()
@@ -792,6 +817,7 @@ async def upload_document_version(
             upload.content_type or "application/octet-stream",
             size_bytes,
             checksum,
+            actor_user_id,
         )
     )
     created_at = version.created_at or datetime.now(timezone.utc)
@@ -1075,6 +1101,7 @@ def soft_delete_document(
     session_factory: sessionmaker[Session] | None,
     settings: CoordinatorSettings,
     document_id: str,
+    actor_user_id: UUID | None = None,
 ) -> DocumentLifecycleResponse:
     if session_factory is None:
         raise _database_unavailable()
@@ -1086,7 +1113,13 @@ def soft_delete_document(
             )
             if document is None:
                 raise HTTPException(404, "document does not exist")
-            user = _technical_user(session, settings)
+            user = (
+                session.get(User, actor_user_id)
+                if actor_user_id is not None
+                else _technical_user(session, settings)
+            )
+            if user is None:
+                raise HTTPException(401, "authenticated user no longer exists")
             session.flush()
             if document.deleted_at is not None:
                 return DocumentLifecycleResponse(
@@ -1112,6 +1145,7 @@ def restore_document(
     session_factory: sessionmaker[Session] | None,
     settings: CoordinatorSettings,
     document_id: str,
+    actor_user_id: UUID | None = None,
 ) -> DocumentLifecycleResponse:
     if session_factory is None:
         raise _database_unavailable()
@@ -1123,7 +1157,11 @@ def restore_document(
             )
             if document is None:
                 raise HTTPException(404, "document does not exist")
-            _technical_user(session, settings)
+            if actor_user_id is not None:
+                if session.get(User, actor_user_id) is None:
+                    raise HTTPException(401, "authenticated user no longer exists")
+            else:
+                _technical_user(session, settings)
             session.flush()
             if document.deleted_at is None:
                 return DocumentLifecycleResponse(
@@ -1218,6 +1256,7 @@ def _metadata_from_catalog(record: CatalogRecord) -> DocumentMetadata:
         version_number=version.version_number,
         version_status=version.status,
         target_replicas=version.target_replicas,
+        owner_id=record.document.owner_id,
     )
 
 
@@ -1229,7 +1268,10 @@ async def _legacy_get_document_metadata(
 ) -> DocumentMetadata:
     node = configured_node(settings, SCHOOL_TO_NODE.get(school_id, school_id))
     try:
-        response = await client.get(f"{node.url}/files/{document_id}/metadata")
+        response = await client.get(
+            f"{node.url}/files/{document_id}/metadata",
+            headers={"X-Storage-Token": settings.storage_internal_token},
+        )
     except httpx.RequestError as error:
         raise _service_unavailable(error) from error
     await _raise_remote_error(response)
@@ -1292,7 +1334,11 @@ async def _fetch_verified_file(
     document_id: str,
     metadata: DocumentMetadata,
 ) -> BinaryIO:
-    request = client.build_request("GET", f"{node.url}/files/{document_id}")
+    request = client.build_request(
+        "GET",
+        f"{node.url}/files/{document_id}",
+        headers={"X-Storage-Token": settings.storage_internal_token},
+    )
     try:
         response = await client.send(request, stream=True)
     except httpx.RequestError as error:

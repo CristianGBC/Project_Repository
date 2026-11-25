@@ -45,16 +45,28 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         Index("uq_users_email_lower", func.lower(text("email")), unique=True),
+        CheckConstraint(
+            "global_role IS NULL OR global_role = 'super_admin'",
+            name="ck_user_global_role",
+        ),
+        CheckConstraint("token_version >= 0", name="ck_user_token_version"),
     )
 
     id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4
     )
     full_name: Mapped[str] = mapped_column(String(150))
+    first_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(255))
     password_hash: Mapped[str] = mapped_column(Text)
     is_admin: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    global_role: Mapped[str | None] = mapped_column(String(30))
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("false")
+    )
+    token_version: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(timestamp)
@@ -63,14 +75,12 @@ class User(Base):
 class SchoolMembership(Base):
     __tablename__ = "school_memberships"
     __table_args__ = (
-        UniqueConstraint("user_id", "school_id", name="uq_membership_user_school"),
-        CheckConstraint(
-            "role IN ('member', 'contributor', 'school_admin')",
-            name="ck_membership_role",
+        UniqueConstraint(
+            "user_id", "school_id", "role", name="uq_membership_user_school_role"
         ),
         CheckConstraint(
-            "affiliation IS NULL OR affiliation IN ('student', 'professor', 'researcher', 'staff')",
-            name="ck_membership_affiliation",
+            "role IN ('student', 'professor', 'school_admin')",
+            name="ck_membership_role",
         ),
     )
 
@@ -81,6 +91,7 @@ class SchoolMembership(Base):
     school_id: Mapped[str] = mapped_column(ForeignKey("schools.id"))
     role: Mapped[str] = mapped_column(String(30))
     affiliation: Mapped[str | None] = mapped_column(String(30))
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
 
     user: Mapped[User] = relationship()
@@ -173,6 +184,7 @@ class Document(Base):
         ForeignKey("document_types.id"), index=True
     )
     created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
     visibility: Mapped[str] = mapped_column(String(20), server_default=text("'school'"))
     current_version_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True)
@@ -351,3 +363,18 @@ class ReconciliationAttempt(Base):
     )
     replica_snapshot: Mapped[dict] = mapped_column(JSONB)
     detail: Mapped[str | None] = mapped_column(Text)
+
+
+class SecurityAuditEvent(Base):
+    __tablename__ = "security_audit_events"
+
+    id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    actor_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(80))
+    resource_type: Mapped[str] = mapped_column(String(50))
+    resource_id: Mapped[str | None] = mapped_column(String(100))
+    outcome: Mapped[str] = mapped_column(String(20))
+    detail: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())

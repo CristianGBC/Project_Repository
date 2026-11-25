@@ -31,6 +31,7 @@ class DocumentMetadata(BaseModel):
     version_number: int | None = None
     version_status: Literal["pending", "available", "failed"] | None = None
     target_replicas: int | None = None
+    owner_id: UUID | None = None
 
     @field_validator("created_at")
     @classmethod
@@ -68,3 +69,11 @@ class DocumentLifecycleResponse(BaseModel):
     document_id: UUID
     status: Literal["deleted", "already_deleted", "restored", "already_active"]
     deleted_at: datetime | None
+
+
+class DocumentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    document_type_id: str | None = Field(default=None, max_length=30)

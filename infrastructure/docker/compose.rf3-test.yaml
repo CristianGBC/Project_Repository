@@ -9,6 +9,7 @@ x-storage-common: &storage-common
     DATA_ROOT: /data
     MAX_UPLOAD_SIZE_MB: 10
     REPAIR_INTERNAL_TOKEN: rf3-test-repair-token
+    STORAGE_INTERNAL_TOKEN: rf3-test-storage-token
   healthcheck:
     test:
       - CMD
@@ -58,6 +59,8 @@ services:
       MAX_UPLOAD_SIZE_MB: 10
       REPLICATION_FACTOR: ${RF3_TEST_REPLICATION_FACTOR:-3}
       DATABASE_URL: postgresql+psycopg://yachayrepo_rf3_test:yachayrepo_rf3_test@postgres-test:5432/yachayrepo_rf3_test
+      AUTH_JWT_SECRET: rf3-test-jwt-secret-that-is-longer-than-thirty-two-characters
+      STORAGE_INTERNAL_TOKEN: rf3-test-storage-token
     ports:
       - "127.0.0.1:18000:8000"
     healthcheck:
@@ -123,6 +126,7 @@ services:
       REPAIR_RETRY_BACKOFF_SECONDS: 1
       REPAIR_EXCESS_CLEANUP_ENABLED: "true"
       REPAIR_INTERNAL_TOKEN: rf3-test-repair-token
+      STORAGE_INTERNAL_TOKEN: rf3-test-storage-token
 
   upload-reconciler-test:
     profiles:
@@ -151,6 +155,7 @@ services:
       RECONCILIATION_MAX_CONCURRENT_JOBS: 2
       RECONCILIATION_TRANSFER_TIMEOUT_SECONDS: 10
       REPAIR_INTERNAL_TOKEN: rf3-test-repair-token
+      STORAGE_INTERNAL_TOKEN: rf3-test-storage-token
 
   node-bio-test:
     <<: *storage-common
