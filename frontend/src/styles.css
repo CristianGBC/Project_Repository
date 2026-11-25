@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --primary: #173c70; --primary-foreground: #fff; --secondary: #dfeaf7;
+  --background: #f4f7fb; --foreground: #12243a; --muted: #52647a;
+  --border: #d5deea; --accent: #eaf2fc; --destructive: #a32134;
+  --success: #176746; --warning: #875611; --information: #205591;
+  font-family: Inter, system-ui, sans-serif;
+  color: var(--foreground); background: var(--background);
+}
+body { margin: 0; }
+h1, h2 { font-weight: 720; line-height: 1.13; letter-spacing: -.035em; }
+h1 { font-size: clamp(1.9rem, 4vw, 3rem); }
+h2 { font-size: 1.45rem; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #367ec3; outline-offset: 3px; }
+.muted { color: var(--muted); }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: .55rem; min-height: 2.75rem; padding: .55rem .9rem; border-radius: .55rem; font-weight: 650; cursor: pointer; }
+.button:disabled { opacity: .6; cursor: wait; }
+.primary { background: var(--primary); color: var(--primary-foreground); }
+.primary:hover { background: #102f58; }
+.ghost:hover { background: var(--accent); }
+.input { width: 100%; border: 1px solid var(--border); border-radius: .55rem; background: white; min-height: 3rem; padding: .65rem .8rem; }
+.input[aria-invalid=true] { border-color: var(--destructive); }
+.label { display: inline-block; margin-bottom: .35rem; font-weight: 650; }
+.field-error { color: var(--destructive); margin-top: .35rem; font-size: .9rem; }
+.alert { border: 1px solid #efb6bf; background: #fff2f4; color: var(--destructive); padding: .75rem; border-radius: .55rem; }
+.card { padding: clamp(1rem, 3vw, 1.6rem); background: white; border: 1px solid var(--border); border-radius: .9rem; }
+.badge, .avatar { display: inline-flex; background: var(--accent); color: var(--primary); padding: .3rem .65rem; border-radius: 2rem; font-size: .9rem; font-weight: 650; }
+.avatar { align-items: center; justify-content: center; width: 2.3rem; height: 2.3rem; }
+.skeleton { background: var(--accent); padding: 1rem; border-radius: .6rem; }
+hr { border-color: var(--border); }
+.center { min-height: 65vh; display: grid; align-content: center; justify-content: center; padding: 1rem; }
+.center .card { width: min(31rem, calc(100vw - 2rem)); }
+.center h1 { margin-bottom: .65rem; }
+form { display: grid; gap: 1rem; margin: 1.6rem 0 1rem; }
+.brand { display: flex; gap: .75rem; align-items: center; }
+.brand strong, .brand small { display: block; }
+.brand strong { font-size: 1.25rem; }
+.brand small { font-size: .87rem; }
+.brand-icon, .form-icon { display: grid; place-items: center; width: 2.7rem; height: 2.7rem; border-radius: .65rem; background: var(--secondary); color: var(--primary); flex-shrink: 0; }
+.login { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 100dvh; }
+.identity { background: radial-gradient(ellipse at 85% 70%, #255c94, transparent 63%), #102b50; color: white; display: flex; flex-direction: column; justify-content: space-between; padding: clamp(2rem, 5vw, 5rem); }
+.identity-copy { max-width: 34rem; }
+.identity-copy h1 { font-size: clamp(2.3rem, 5vw, 4.5rem); margin: 1rem 0; }
+.identity-copy p, .identity-foot { color: #dbe8f9; }
+.login-side { background: white; display: grid; place-content: center; padding: 2rem; }
+.login-form { width: min(26rem, 100%); }
+.login-form h2 { font-size: 2rem; margin: 1rem 0 .5rem; }
+.login-note { color: var(--muted); font-size: .9rem; }
+.password-field { position: relative; }
+.password-field input { padding-right: 3.1rem; }
+.password-field button { position: absolute; right: .2rem; top: .13rem; }
+.layout { min-height: 100dvh; display: grid; grid-template-columns: 16.75rem minmax(0, 1fr); }
+.sidebar { background: white; border-right: 1px solid var(--border); padding: 1.35rem; display: flex; flex-direction: column; gap: 1.4rem; position: sticky; top: 0; height: 100dvh; }
+.sidebar-logout { margin-top: auto; align-self: flex-start; }
+.nav-link { display: flex; align-items: center; gap: .65rem; padding: .75rem; color: var(--muted); border-radius: .55rem; }
+.nav-link[data-status=active], .nav-link:hover { background: var(--accent); color: var(--primary); font-weight: 650; }
+.topbar { min-height: 4.25rem; padding: .5rem clamp(1rem, 4vw, 2rem); display: flex; align-items: center; justify-content: space-between; background: white; border-bottom: 1px solid var(--border); }
+.heading, .section-title { display: flex; align-items: center; gap: .7rem; }
+.content { max-width: 75rem; margin: auto; padding: clamp(1rem, 4vw, 2.75rem); }
+.welcome { background: linear-gradient(105deg, #edf4ff, #f7fbff); border: 1px solid var(--border); border-radius: .9rem; padding: clamp(1.3rem, 4vw, 2.7rem); margin-bottom: 1.3rem; }
+.welcome h1 { margin: .6rem 0; }
+.welcome .button { margin-top: 1.25rem; }
+.profile .card { margin-top: 1.2rem; }
+.profile dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: .6rem; margin: 1rem 0; overflow-wrap: anywhere; }
+.profile dt { color: var(--muted); }
+.membership-list li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; padding: .8rem 0; border-bottom: 1px solid var(--border); }
+.dropdown, .sheet { background: white; border: 1px solid var(--border); padding: .55rem; border-radius: .6rem; z-index: 3; box-shadow: 0 12px 30px #12243a24; }
+.dropdown [role=menuitem] { display: flex; gap: .5rem; align-items: center; padding: .65rem; cursor: pointer; }
+.dropdown [data-highlighted] { background: var(--accent); outline: none; }
+.overlay { position: fixed; inset: 0; background: #12243a70; z-index: 2; }
+.sheet { position: fixed; inset: 0 auto 0 0; width: min(19rem, 90vw); padding: 1.35rem; }
+.sheet nav { margin-top: 1.5rem; }
+.close { position: absolute; right: .5rem; top: .4rem; }
+.mobile-brand, .mobile-menu { display: none; }
+.skip { position: absolute; left: -9999px; }
+.skip:focus { left: 1rem; top: 1rem; background: white; z-index: 4; }
+@media (max-width: 760px) {
+  .identity, .sidebar, .account-name { display: none; }
+  .login, .layout { display: block; }
+  .login-side { min-height: 100dvh; place-content: center; }
+  .mobile-brand, .mobile-menu { display: block; }
+  .mobile-brand { margin-bottom: 2.5rem; }
+}
