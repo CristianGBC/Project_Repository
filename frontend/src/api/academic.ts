@@ -2,7 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import { api, keys, type School } from './session'
 
 export interface Subject { id: string; school_id: string; code: string; name: string; is_active: boolean; description?: string | null }
-export interface DocumentType { id: string; name: string; is_active: boolean }
+export interface DocumentType { id: string; name: string; is_active: boolean; requires_subject: boolean }
 export interface AcademicDocument {
   document_id: string; title: string | null; filename: string; description: string | null
   school_id: string; school: string; subjects: Subject[]; document_type_name: string | null

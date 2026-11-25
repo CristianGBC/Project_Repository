@@ -93,6 +93,10 @@ form { display: grid; gap: 1rem; margin: 1.6rem 0 1rem; }
 .pdf-controls { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .pdf-controls input { width: 4rem; border: 1px solid var(--border); padding: .3rem; }
 .pdf-page-form { display: flex; align-items: center; gap: .3rem; margin: 0; }
+.sidebar, .sheet { overflow-y: auto; }
+.file-drop { border: 1px dashed var(--border); border-radius: .65rem; padding: 1rem; overflow-wrap: anywhere; }
+.professor-dialog { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(30rem, calc(100vw - 2rem)); z-index: 3; display: grid; gap: 1rem; }
+.professor-dialog h2 { font-size: 1.25rem; }
 .pdf-area { max-width: 100%; overflow: auto; background: var(--background); padding: .5rem; }
 .pdf-area canvas { display: block; max-width: none; margin-inline: auto; }
 @media (max-width: 950px) { .document-detail { grid-template-columns: minmax(0, 1fr); } }

@@ -85,6 +85,15 @@ it('valida el perfil, resuelve escuelas y muestra solo enlaces implementados', a
   expect(await screen.findByText('Matemáticas')).toBeTruthy()
   expect(screen.queryByRole('link', { name: 'Usuarios' })).toBeNull()
 })
+it('oculta el portal del profesor a administradores sin membresía docente y protege la URL', async () => {
+  profile = { ...user, global_role: 'super_admin', memberships: user.memberships.filter(m => m.role !== 'professor') }
+  await session.login(user.email, 'password')
+  const router = show('/profile')
+  await screen.findByRole('heading', { name: 'Mi perfil' })
+  expect(screen.queryByRole('link', { name: 'Mis documentos' })).toBeNull()
+  await router.navigate({ to: '/professor/documents/new' })
+  await screen.findByRole('heading', { name: 'Acceso restringido' })
+})
 it('explora con búsqueda diferida, reinicia la página al filtrar y limpia la URL', async () => {
   await session.login(user.email, 'password')
   const router = show('/documents?page=2')

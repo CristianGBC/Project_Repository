@@ -339,6 +339,17 @@ def test_professor_upload_uses_authenticated_owner_and_school_scope(auth_catalog
     assert forbidden_update.status_code == 403
     assert owner_update.status_code == 200
     assert new_version.status_code == 201 and new_version.json()["version_number"] == 2
+    path = f"/documents/my/uploads?document_id={document_id}&deleted=false&limit=1"
+    owner_uploads = api_request(session_factory, settings, "GET", path, token=token)
+    student_uploads = api_request(
+        session_factory, settings, "GET", path, token=token_for(student, settings),
+    )
+    assert student_uploads.json() == []
+    assert int(owner_uploads.headers["x-max-upload-bytes"]) == settings.max_upload_size_bytes
+    row, = owner_uploads.json()
+    assert row["title"] == "Updated by owner"
+    assert row["versions"][0]["filename"] == "owned-v2.txt"
+    assert row["current_version_id"] == row["versions"][0]["version_id"]
     with session_factory() as session:
         document = session.get(Document, UUID(allowed.json()["document_id"]))
         assert document.owner_id == professor.id

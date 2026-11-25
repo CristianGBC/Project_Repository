@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { House, UserRound, Menu, LogOut, ChevronDown, Building2, KeyRound, Library } from 'lucide-react'
+import { House, UserRound, Menu, LogOut, ChevronDown, Building2, KeyRound, Library, Folder, FileUp, History, Trash2 } from 'lucide-react'
 import { api, keys, errorMessage, type School, type User } from '../api/session'
 import { Alert, Avatar, Badge, Button, Card, Dialog, DropdownMenu, Separator, Sheet, Skeleton } from '../components/ui'
 import { Brand } from './auth/screens'
+import { hasAnySchoolRole } from './auth/permissions'
 
 const navigation = [
   { to: '/', label: 'Inicio', icon: House },
@@ -12,23 +13,32 @@ const navigation = [
   { to: '/schools', label: 'Escuelas', icon: Building2 },
   { to: '/profile', label: 'Mi perfil', icon: UserRound },
 ] as const
+const professorNavigation = [
+  { to: '/professor/documents', label: 'Mis documentos', icon: Folder },
+  { to: '/professor/documents/new', label: 'Subir documento', icon: FileUp },
+  { to: '/professor/uploads', label: 'Mis subidas', icon: History },
+  { to: '/professor/documents/deleted', label: 'Documentos eliminados', icon: Trash2 },
+] as const
 const roles = { student: 'Estudiante', professor: 'Profesor', school_admin: 'Administrador de escuela' }
 const displayName = (user: User) => [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email
-function Navigation({ mobile = false }: { mobile?: boolean }) {
-  return <nav aria-label="Navegación principal">{navigation.map(({ to, label, icon: Icon }) => {
-    const link = <Link key={to} to={to} search={{}} activeOptions={{ exact: to === '/' }} className="nav-link"><Icon size={19} />{label}</Link>
+function Navigation({ user, mobile = false }: { user: User; mobile?: boolean }) {
+  const items = hasAnySchoolRole(user, 'professor') ? [...navigation, ...professorNavigation] : navigation
+  return <nav aria-label="Navegación principal">{items.map(({ to, label, icon: Icon }) => {
+    const link = <Link key={to} to={to} search={{}} activeOptions={{ exact: to === '/' || to.startsWith('/professor') }} className="nav-link"><Icon size={19} />{label}</Link>
     return mobile ? <Dialog.Close key={to} asChild>{link}</Dialog.Close> : link
   })}</nav>
 }
 export function Layout({ user, logout, children }: { user: User; logout: () => void; children: ReactNode }) {
   const pathname = useLocation({ select: location => location.pathname })
+  const section = [...professorNavigation, ...navigation].find(item => item.to === pathname) ??
+    [...professorNavigation, ...navigation].find(item => item.to !== '/' && pathname.startsWith(item.to + '/'))
   return <div className="layout"><a className="skip" href="#content">Ir al contenido</a>
-    <aside className="sidebar"><Brand /><Separator /><Navigation />
+    <aside className="sidebar"><Brand /><Separator /><Navigation user={user} />
       <Button variant="ghost" className="sidebar-logout" onClick={logout}><LogOut size={18} />Cerrar sesión</Button>
     </aside>
     <div className="workspace"><header className="topbar">
-      <div className="heading"><div className="mobile-menu"><Sheet trigger={<Button variant="ghost" aria-label="Abrir menú"><Menu size={22} /></Button>}><Navigation mobile /></Sheet></div>
-        <strong>{navigation.find(item => item.to === pathname || (item.to !== '/' && pathname.startsWith(item.to + '/')))?.label ?? 'Cambiar contraseña'}</strong></div>
+      <div className="heading"><div className="mobile-menu"><Sheet trigger={<Button variant="ghost" aria-label="Abrir menú"><Menu size={22} /></Button>}><Navigation user={user} mobile /></Sheet></div>
+        <strong>{section?.label ?? 'Cambiar contraseña'}</strong></div>
       <DropdownMenu.Root><DropdownMenu.Trigger asChild>
         <Button variant="ghost" aria-label="Menú de cuenta"><Avatar name={displayName(user)} /><span className="account-name">{displayName(user)}</span><ChevronDown size={16} /></Button>
       </DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" sideOffset={8} className="dropdown">

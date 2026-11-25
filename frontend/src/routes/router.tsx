@@ -7,6 +7,8 @@ import { Layout, Home, Profile } from '../features/dashboard'
 import { Button, Card, Skeleton } from '../components/ui'
 import { parseFilters } from '../api/academic'
 import { DocumentDetail, Explorer, HomeAcademic, SchoolDetail, Schools } from '../features/academic/portal'
+import { hasAnySchoolRole } from '../features/auth/permissions'
+import { ProfessorDocument, ProfessorForm, ProfessorList } from '../features/professor/portal'
 
 export type Session = ReturnType<typeof createSession>
 const root = createRootRouteWithContext<{ session: Session }>()({
@@ -85,8 +87,32 @@ const password = createRoute({ getParentRoute: () => protectedRoute, path: '/cha
   return <ChangePassword user={user} session={session} />
 } })
 const forbidden = createRoute({ getParentRoute: () => root, path: '/403', component: () => <State title="Acceso restringido" /> })
+const professor = createRoute({
+  getParentRoute: () => protectedRoute, path: '/professor',
+  beforeLoad: ({ context }) => {
+    if (!hasAnySchoolRole(context.user, 'professor')) throw redirect({ to: '/403', replace: true })
+  },
+  component: Outlet,
+})
+const owned = createRoute({ getParentRoute: () => professor, path: '/documents', component: () => <ProfessorList mode="active" /> })
+const deleted = createRoute({ getParentRoute: () => professor, path: '/documents/deleted', component: () => <ProfessorList mode="deleted" /> })
+const uploads = createRoute({ getParentRoute: () => professor, path: '/uploads', component: () => <ProfessorList mode="uploads" /> })
+const newDocument = createRoute({ getParentRoute: () => professor, path: '/documents/new', component: () => <ProfessorForm user={professor.useRouteContext().user} /> })
+const ownedDetail = createRoute({ getParentRoute: () => professor, path: '/documents/$documentId', component: () => {
+  const { documentId } = ownedDetail.useParams()
+  return <ProfessorDocument id={documentId} user={professor.useRouteContext().user} mode="view" />
+} })
+const editDocument = createRoute({ getParentRoute: () => professor, path: '/documents/$documentId/edit', component: () => {
+  const { documentId } = editDocument.useParams()
+  return <ProfessorDocument id={documentId} user={professor.useRouteContext().user} mode="edit" />
+} })
+const newVersion = createRoute({ getParentRoute: () => professor, path: '/documents/$documentId/new-version', component: () => {
+  const { documentId } = newVersion.useParams()
+  return <ProfessorDocument id={documentId} user={professor.useRouteContext().user} mode="version" />
+} })
 export function makeRouter(session: Session, history?: RouterHistory) {
-  const router = createRouter({ routeTree: root.addChildren([login, forbidden, protectedRoute.addChildren([home, profile, password, documents, documentDetail, schools, school, subject])]), context: { session }, history, defaultPendingMs: 0 })
+  const professorRoutes = professor.addChildren([owned, deleted, uploads, newDocument, ownedDetail, editDocument, newVersion])
+  const router = createRouter({ routeTree: root.addChildren([login, forbidden, protectedRoute.addChildren([home, profile, password, documents, documentDetail, schools, school, subject, professorRoutes])]), context: { session }, history, defaultPendingMs: 0 })
   session.onEnd(() => { void router.navigate({ to: '/login', replace: true }) })
   return router
 }

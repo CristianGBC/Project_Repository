@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 import httpx
 from pydantic import BeforeValidator
@@ -14,9 +14,11 @@ from backend.app.auth import Principal, get_current_principal
 from backend.app.config import CoordinatorSettings
 from backend.app.models import (
     Document,
+    DocumentReplica,
     DocumentType,
     DocumentVersion,
     ReconciliationJob,
+    ReconciliationAttempt,
     SecurityAuditEvent,
 )
 from backend.app.schemas import (
@@ -40,6 +42,8 @@ from backend.app.services.document_service import (
     upload_document,
     upload_document_version,
     canonical_school_id,
+    _active_subjects,
+    _validate_subject_requirement,
 )
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -332,12 +336,18 @@ async def update_document_metadata(
         )
         if document is None or document.deleted_at is not None:
             raise HTTPException(status_code=404, detail="document does not exist")
-        if "document_type_id" in values and values["document_type_id"] is not None:
-            document_type = session.get(DocumentType, values["document_type_id"])
-            if document_type is None or not document_type.is_active:
+        if "document_type_id" in values or "subject_ids" in values:
+            type_id = values.get("document_type_id", document.document_type_id)
+            document_type = session.get(DocumentType, type_id) if type_id else None
+            if "document_type_id" in values and type_id and (document_type is None or not document_type.is_active):
                 raise HTTPException(status_code=400, detail="document type does not exist")
-            if document_type.requires_subject and not document.subjects:
-                raise HTTPException(status_code=400, detail="document type requires a subject")
+            subjects = (
+                _active_subjects(session, values["subject_ids"], document.school_id)
+                if "subject_ids" in values else document.subjects
+            )
+            _validate_subject_requirement(document_type, subjects)
+            if "subject_ids" in values:
+                document.subjects = subjects
         for field in ("title", "description", "document_type_id"):
             if field in values:
                 setattr(document, field, values[field])
@@ -365,12 +375,30 @@ async def update_document_metadata(
 @router.get("/my/uploads")
 def my_uploads(
     request: Request,
+    response: Response,
     principal: Principal = Depends(get_current_principal),
+    deleted: bool | None = Query(None),
+    school_id: str | None = Query(None),
+    document_type_id: str | None = Query(None),
+    document_id: UUID | None = Query(None),
+    q: str | None = Query(None, max_length=200),
+    offset: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=100),
 ) -> list[dict]:
+    response.headers["X-Max-Upload-Bytes"] = str(request.app.state.settings.max_upload_size_bytes)
     with request.app.state.session_factory() as session:
-        documents = session.scalars(
-            select(Document).where(Document.owner_id == principal.user_id).order_by(Document.created_at.desc())
-        ).all()
+        query = select(Document).where(Document.owner_id == principal.user_id)
+        if deleted is not None:
+            query = query.where(Document.deleted_at.is_not(None) if deleted else Document.deleted_at.is_(None))
+        if school_id is not None:
+            query = query.where(Document.school_id == school_id)
+        if document_type_id is not None:
+            query = query.where(Document.document_type_id == document_type_id)
+        if document_id is not None:
+            query = query.where(Document.id == document_id)
+        if q and q.strip():
+            query = query.where(Document.title.icontains(q.strip(), autoescape=True))
+        documents = session.scalars(query.order_by(Document.created_at.desc(), Document.id).offset(offset).limit(limit)).all()
         results = []
         for document in documents:
             versions = session.scalars(
@@ -383,12 +411,32 @@ def my_uploads(
                 job = session.scalar(
                     select(ReconciliationJob).where(ReconciliationJob.version_id == version.id)
                 )
+                last_attempt = session.scalar(
+                    select(ReconciliationAttempt.started_at)
+                    .where(ReconciliationAttempt.job_id == job.id)
+                    .order_by(ReconciliationAttempt.attempt_number.desc()).limit(1)
+                ) if job else None
                 version_rows.append(
                     {
                         "version_id": str(version.id),
                         "version_number": version.version_number,
                         "status": version.status,
+                        "filename": version.filename,
+                        "size_bytes": version.size_bytes,
+                        "created_at": version.created_at,
+                        "last_attempt_at": last_attempt,
+                        "next_attempt_at": job.next_attempt_at if job else None,
                         "reconciliation_status": job.status if job else None,
+                        "awaiting_reconciliation": bool(
+                            job is None and version.status == "failed"
+                            and session.scalar(
+                                select(DocumentReplica.id)
+                                .where(
+                                    DocumentReplica.version_id == version.id,
+                                    DocumentReplica.status == "healthy",
+                                ).limit(1)
+                            )
+                        ),
                         "attempts": job.attempts if job else 0,
                         "requires_intervention": bool(job and job.status == "failed"),
                     }
@@ -397,6 +445,11 @@ def my_uploads(
                 "document_id": str(document.id),
                 "school_id": document.school_id,
                 "title": document.title,
+                "description": document.description,
+                "document_type_id": document.document_type_id,
+                "subject_ids": [str(subject.id) for subject in document.subjects],
+                "created_at": document.created_at,
+                "updated_at": document.updated_at,
                 "current_version_id": str(document.current_version_id) if document.current_version_id else None,
                 "deleted_at": document.deleted_at,
                 "versions": version_rows,
