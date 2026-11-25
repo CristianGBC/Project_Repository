@@ -60,6 +60,7 @@ services:
       REPLICATION_FACTOR: ${RF3_TEST_REPLICATION_FACTOR:-3}
       DATABASE_URL: postgresql+psycopg://yachayrepo_rf3_test:yachayrepo_rf3_test@postgres-test:5432/yachayrepo_rf3_test
       AUTH_JWT_SECRET: rf3-test-jwt-secret-that-is-longer-than-thirty-two-characters
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173
       STORAGE_INTERNAL_TOKEN: rf3-test-storage-token
     ports:
       - "127.0.0.1:18000:8000"

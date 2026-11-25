@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Repositorio institucional académico de Yachay Tech para publicar, clasificar, versionar y recuperar documentos aun cuando fallen nodos de almacenamiento. El backend gestiona escuelas, materias, tipos documentales, usuarios y permisos. La distribución física definitiva y la interfaz web siguen pendientes.
+Repositorio institucional académico de Yachay Tech para publicar, clasificar, versionar y recuperar documentos aun cuando fallen nodos de almacenamiento. El backend gestiona escuelas, materias, tipos documentales, usuarios y permisos. La interfaz inicial incluye autenticación y perfil. El portal documental y la distribución física definitiva siguen pendientes.
 
 ## Technology Stack
 
@@ -34,7 +34,8 @@ El catálogo central registra identidad, permisos, metadatos y estados. Los nodo
 | `backend/storage/main.py`, `application.py` y `document_store.py` dentro de `backend/storage/` | Entrada ASGI del nodo, HTTP interno y persistencia/verificación |
 | `backend/{monitor,repair,reconciliation}/main.py` | Entradas de los tres procesos periódicos |
 | `backend/tests/`, `infrastructure/docker/`, `docs/` | Pruebas, configuración de despliegue y guías |
-| `frontend/`, `infrastructure/raspberry/` | Marcadores de trabajo futuro |
+| `frontend/` | SPA React para autenticación, inicio y perfil. Entrada en `frontend/src/main.tsx` |
+| `infrastructure/raspberry/` | Marcador para despliegue físico |
 | `prototype/`, `experiments/json-interchange/` | Implementaciones históricas de Workshops 6 y 7 |
 
 ## Core Workflows
@@ -57,11 +58,14 @@ El catálogo central registra identidad, permisos, metadatos y estados. Los nodo
 - Corte del 25 de noviembre de 2026. `main` en `3b4c626`, alineada con la referencia local `origin/main`. Árbol limpio antes de este análisis. Historial reciente en `feature/*` y `fix/*`, con merges sucesivos de RF3, failover, monitor, reparación, reconciliación y RBAC.
 - Implementados catálogo PostgreSQL, versionado y borrado lógico, tipos y materias, RF3, failover, monitor, reparación, reconciliación inicial y autenticación/RBAC. El código y Compose demuestran disponibilidad de las funciones, y su activación depende de la configuración del despliegue.
 - Parcial. Compatibilidad con JSON histórico sin importación automática. El rate limiter vive por proceso y la sesión utiliza exclusivamente access tokens.
-- Pendientes documentados. Frontend, despliegue físico Raspberry Pi, HA de PostgreSQL, OAuth, correo, cifrado de archivos y balanceo. RabbitMQ pertenece al prototipo en el estado observado.
+- Fase 7.1. SPA de autenticación y perfil en español con React, TanStack Router y Query, Axios y modo claro. Playwright comprobó el flujo contra FastAPI y PostgreSQL aislados.
+- Pendientes documentados. Explorador y visor PDF, despliegue físico Raspberry Pi, HA de PostgreSQL, OAuth, correo, cifrado de archivos y balanceo. RabbitMQ pertenece al prototipo en el estado observado.
 - Validación local de este corte. Pytest se detuvo al importar `argon2` en la virtualenv existente, antes de recolectar pruebas. La guía de RBAC registra un E2E del 24 de noviembre con RF3, failover, reconciliación y revocación. Ese resultado es histórico. El estado de instancias en ejecución y la topología física no se comprobaron.
 - Algunas guías de etapas anteriores conservan referencias a RF=1 o revisiones antiguas. Comprueba el head en el código y el estado de la base de destino antes de usar procedimientos históricos.
 
 ## Documentation Index
+
+- [Frontend 7.1](docs/frontend-foundation.md) para levantar la SPA, integrar autenticación y ejecutar sus pruebas.
 
 - [README](README.md) para entrada general y perfiles. [Dos hosts](docs/two-host-deployment.md) para topología y arranque distribuido.
 - [PostgreSQL](docs/postgresql.md) para conexión y respaldo. [Integración documental](docs/postgresql-document-integration.md) para catálogo y compatibilidad JSON. [Pruebas PostgreSQL](docs/postgresql-testing.md) para aislamiento.

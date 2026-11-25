@@ -2,6 +2,8 @@
 
 ## Development Environment
 
+Para trabajar en la SPA, usa npm desde `frontend/` y sigue la [guía del frontend](docs/frontend-foundation.md). Valida con `npm run lint`, `npm run typecheck`, `npm test` y `npm run build`.
+
 Ejecuta los comandos desde la raíz del repositorio. Usa Python 3.14 para reproducir las imágenes, Docker con Compose v2 y acceso a PostgreSQL. Crea y activa una virtualenv si hace falta.
 
 ```bash

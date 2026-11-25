@@ -1,5 +1,9 @@
 # YachayRepo
 
+La Fase 7.1 incorpora un frontend en español para iniciar sesión, consultar el
+perfil y cambiar la contraseña. Consulta la [guía del frontend](docs/frontend-foundation.md)
+para iniciarlo en `http://localhost:5173` y conectarlo al coordinador.
+
 YachayRepo es un proyecto académico de Sistemas Distribuidos para construir y
 evaluar un repositorio institucional tolerante a fallos. La Etapa 3 permite
 cargar, consultar y descargar documentos mediante el coordinador y los seis
@@ -268,10 +272,10 @@ transiciones del monitor y reconciliación durable con el catálogo real.
 
 ## Funcionalidades todavía no implementadas
 
-Esta etapa no incluye frontend, importación automática de los metadatos JSON
-existentes, RabbitMQ, OAuth externo, envío de correos, cifrado de archivos,
-balanceo de carga ni despliegue físico
-sobre Raspberry Pi. RF = 3 replica escrituras de forma síncrona, las lecturas
+Siguen pendientes el portal documental web, la importación automática de
+metadatos JSON, RabbitMQ, OAuth externo, el envío de correos, el cifrado de
+archivos, el balanceo de carga y el despliegue físico en Raspberry Pi.
+RF = 3 replica escrituras de forma síncrona, las lecturas
 realizan failover y el proceso independiente repara déficits confirmados.
 
 La Etapa 4.2 incorporó el esquema inicial del catálogo PostgreSQL, sus modelos,
