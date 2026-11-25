@@ -7,14 +7,36 @@ from dataclasses import replace
 from fastapi import FastAPI
 import httpx
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 
+from backend.app.auth import Principal, get_current_principal
 from backend.app.config import CoordinatorSettings, load_settings
 from backend.app.main import create_app
+from backend.app.models import User
 
 MockHandler = Callable[
     [httpx.Request],
     httpx.Response | Awaitable[httpx.Response],
 ]
+
+TEST_USER_ID = load_settings().technical_user_id
+TEST_PRINCIPAL = Principal(
+    user_id=TEST_USER_ID,
+    first_name="Integration",
+    last_name="Operator",
+    email="integration-operator@yachayrepo.invalid",
+    is_active=True,
+    global_role="super_admin",
+    must_change_password=False,
+    token_version=0,
+    roles_by_school={
+        school_id: frozenset({"student", "professor", "school_admin"})
+        for school_id in (
+            "school-bio", "school-phy", "school-math", "school-chem",
+            "school-earth", "school-agro",
+        )
+    },
+)
 
 
 def asgi_request(
@@ -65,6 +87,32 @@ def coordinator_request(
                 http_client=outgoing_client,
                 session_factory=session_factory,
             )
+            application.dependency_overrides[get_current_principal] = lambda: TEST_PRINCIPAL
+            if session_factory is not None:
+                try:
+                    with session_factory.begin() as session:
+                        test_user = session.get(User, TEST_USER_ID)
+                        if test_user is None:
+                            session.add(
+                                User(
+                                id=TEST_USER_ID,
+                                full_name="Integration Operator",
+                                first_name="Integration",
+                                last_name="Operator",
+                                email="integration-operator@yachayrepo.invalid",
+                                password_hash="!test-dependency-override!",
+                                is_admin=False,
+                                global_role=None,
+                                is_active=True,
+                                must_change_password=False,
+                                token_version=0,
+                                )
+                            )
+                        else:
+                            test_user.is_admin = False
+                            test_user.global_role = None
+                except SQLAlchemyError:
+                    pass
             async with application.router.lifespan_context(application):
                 transport = httpx.ASGITransport(app=application)
                 async with httpx.AsyncClient(

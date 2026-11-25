@@ -230,3 +230,44 @@ def test_invalid_upload_reconciliation_settings_are_rejected(
     monkeypatch.setenv(variable, value)
     with pytest.raises(ValueError):
         load_settings()
+
+
+def test_authentication_defaults_and_overrides(monkeypatch) -> None:
+    for variable in (
+        "AUTH_JWT_SECRET", "AUTH_JWT_ALGORITHM", "AUTH_ACCESS_TOKEN_EXPIRE_MINUTES",
+        "AUTH_JWT_ISSUER", "AUTH_JWT_AUDIENCE", "AUTH_ALLOWED_EMAIL_DOMAINS",
+        "AUTH_LOGIN_MAX_ATTEMPTS", "AUTH_LOGIN_WINDOW_SECONDS", "CORS_ALLOWED_ORIGINS",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+    defaults = load_settings()
+    assert defaults.auth_jwt_algorithm == "HS256"
+    assert defaults.auth_access_token_expire_minutes == 30
+    assert defaults.auth_allowed_email_domains == ()
+    assert defaults.cors_allowed_origins == ("http://localhost:3000",)
+
+    monkeypatch.setenv("AUTH_JWT_SECRET", "x" * 40)
+    monkeypatch.setenv("AUTH_ACCESS_TOKEN_EXPIRE_MINUTES", "15")
+    monkeypatch.setenv("AUTH_ALLOWED_EMAIL_DOMAINS", "Example.EDU, yachaytech.edu.ec")
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://repo.example.edu")
+    configured = load_settings()
+    assert configured.auth_access_token_expire_minutes == 15
+    assert configured.auth_allowed_email_domains == ("example.edu", "yachaytech.edu.ec")
+    assert configured.cors_allowed_origins == ("https://repo.example.edu",)
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("AUTH_JWT_SECRET", "short"),
+        ("AUTH_JWT_ALGORITHM", "none"),
+        ("AUTH_ACCESS_TOKEN_EXPIRE_MINUTES", "0"),
+        ("AUTH_LOGIN_MAX_ATTEMPTS", "0"),
+        ("AUTH_LOGIN_WINDOW_SECONDS", "invalid"),
+        ("CORS_ALLOWED_ORIGINS", "*"),
+        ("STORAGE_INTERNAL_TOKEN", ""),
+    ],
+)
+def test_invalid_authentication_settings_are_rejected(monkeypatch, variable, value) -> None:
+    monkeypatch.setenv(variable, value)
+    with pytest.raises(ValueError):
+        load_settings()

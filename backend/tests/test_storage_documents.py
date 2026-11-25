@@ -35,6 +35,50 @@ def store_request(application, document_id: str, content: bytes) -> httpx.Respon
     )
 
 
+def test_direct_storage_access_requires_internal_credential_when_configured(
+    tmp_path: Path,
+) -> None:
+    content = b"protected storage content"
+    document_id = str(uuid4())
+    application = create_app(
+        "node-math",
+        SCHOOL,
+        tmp_path,
+        1024,
+        storage_internal_token="storage-secret",
+    )
+    anonymous = store_request(application, document_id, content)
+    academic_jwt = asgi_request(
+        application,
+        "PUT",
+        f"/files/{document_id}",
+        headers={"Authorization": "Bearer academic-token"},
+        data=document_form(content),
+        files={"file": ("upload.bin", content, "application/pdf")},
+    )
+    stored = asgi_request(
+        application,
+        "PUT",
+        f"/files/{document_id}",
+        headers={"X-Storage-Token": "storage-secret"},
+        data=document_form(content),
+        files={"file": ("upload.bin", content, "application/pdf")},
+    )
+    direct_download = asgi_request(application, "GET", f"/files/{document_id}")
+    internal_download = asgi_request(
+        application,
+        "GET",
+        f"/files/{document_id}",
+        headers={"X-Storage-Token": "storage-secret"},
+    )
+
+    assert anonymous.status_code == academic_jwt.status_code == 403
+    assert stored.status_code == 201
+    assert direct_download.status_code == 403
+    assert internal_download.status_code == 200
+    assert internal_download.content == content
+
+
 def test_storage_persists_metadata_and_downloads_identical_content(tmp_path: Path) -> None:
     content = b"YachayRepo document content"
     document_id = str(uuid4())

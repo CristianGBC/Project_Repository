@@ -27,10 +27,11 @@ EXPECTED_TABLES = {
     "document_replicas",
     "reconciliation_jobs",
     "reconciliation_attempts",
+    "security_audit_events",
 }
 
 
-def test_model_metadata_declares_the_thirteen_catalog_tables() -> None:
+def test_model_metadata_declares_the_fourteen_catalog_tables() -> None:
     assert set(Base.metadata.tables) == EXPECTED_TABLES
 
 
@@ -61,7 +62,8 @@ def database_engine():
     with engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE TABLE document_replicas, document_subjects, "
+                "TRUNCATE TABLE security_audit_events, reconciliation_attempts, "
+                "reconciliation_jobs, document_replicas, document_subjects, "
                 "document_versions, documents, subjects, school_memberships, "
                 "storage_nodes, physical_hosts, document_types, users, schools "
                 "CASCADE"
@@ -129,6 +131,50 @@ def test_case_insensitive_email_uniqueness(database_engine, catalog_ids) -> None
         "INSERT INTO users (id, full_name, email, password_hash) VALUES (:id, 'Duplicate', 'USER@EXAMPLE.EDU', 'hash')",
         {"id": uuid4()},
     )
+
+
+def test_user_can_hold_multiple_unique_roles_in_the_same_school(
+    database_engine, catalog_ids
+) -> None:
+    with database_engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO school_memberships (id, user_id, school_id, role) "
+                "VALUES (:first, :user, 'school-test', 'student'), "
+                "(:second, :user, 'school-test', 'professor')"
+            ),
+            {"first": uuid4(), "second": uuid4(), **catalog_ids},
+        )
+    expect_integrity_error(
+        database_engine,
+        "INSERT INTO school_memberships (id, user_id, school_id, role) "
+        "VALUES (:id, :user, 'school-test', 'professor')",
+        {"id": uuid4(), **catalog_ids},
+    )
+
+
+def test_legacy_document_owner_is_nullable_and_security_audit_is_persistent(
+    database_engine, catalog_ids
+) -> None:
+    event_id = uuid4()
+    with database_engine.begin() as connection:
+        owner = connection.execute(
+            text("SELECT owner_id FROM documents WHERE id = :document"), catalog_ids
+        ).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO security_audit_events "
+                "(id, actor_user_id, action, resource_type, resource_id, outcome) "
+                "VALUES (:id, :user, 'test_action', 'user', :resource, 'success')"
+            ),
+            {"id": event_id, "resource": str(catalog_ids["user"]), **catalog_ids},
+        )
+        stored = connection.execute(
+            text("SELECT action FROM security_audit_events WHERE id = :id"),
+            {"id": event_id},
+        ).scalar_one()
+    assert owner is None
+    assert stored == "test_action"
 
 
 @pytest.mark.parametrize(

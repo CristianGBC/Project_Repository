@@ -41,6 +41,16 @@ class CoordinatorSettings:
     reconciliation_max_attempts: int = 10
     reconciliation_max_concurrent_jobs: int = 2
     reconciliation_transfer_timeout_seconds: float = 120.0
+    auth_jwt_secret: str = "development-only-jwt-secret-change-me-0123456789abcdef"
+    auth_jwt_algorithm: str = "HS256"
+    auth_access_token_expire_minutes: int = 30
+    auth_jwt_issuer: str = "yachayrepo"
+    auth_jwt_audience: str = "yachayrepo-api"
+    auth_allowed_email_domains: tuple[str, ...] = ()
+    auth_login_max_attempts: int = 5
+    auth_login_window_seconds: int = 300
+    cors_allowed_origins: tuple[str, ...] = ("http://localhost:3000",)
+    storage_internal_token: str = "!development-storage-token!"
     database_url: str | None = None
     technical_user_id: UUID = UUID("7d14ef5d-3c61-4ac8-90b5-2bd3f0aa0431")
     technical_user_email: str = "development-operations@yachayrepo.invalid"
@@ -89,6 +99,20 @@ class CoordinatorSettings:
             raise ValueError(
                 "RECONCILIATION_TRANSFER_TIMEOUT_SECONDS must be greater than zero"
             )
+        if self.auth_jwt_algorithm != "HS256":
+            raise ValueError("AUTH_JWT_ALGORITHM must be HS256")
+        if len(self.auth_jwt_secret) < 32:
+            raise ValueError("AUTH_JWT_SECRET must contain at least 32 characters")
+        if self.auth_access_token_expire_minutes < 1:
+            raise ValueError("AUTH_ACCESS_TOKEN_EXPIRE_MINUTES must be at least one")
+        if not self.auth_jwt_issuer or not self.auth_jwt_audience:
+            raise ValueError("AUTH_JWT_ISSUER and AUTH_JWT_AUDIENCE must not be empty")
+        if self.auth_login_max_attempts < 1 or self.auth_login_window_seconds < 1:
+            raise ValueError("login throttling settings must be positive")
+        if not self.storage_internal_token:
+            raise ValueError("STORAGE_INTERNAL_TOKEN must not be empty")
+        if any(origin == "*" for origin in self.cors_allowed_origins):
+            raise ValueError("CORS_ALLOWED_ORIGINS must not contain wildcard origins")
 
 
 NODE_IDENTITIES: tuple[tuple[str, str, str], ...] = (
@@ -184,6 +208,19 @@ def load_settings() -> CoordinatorSettings:
         )
     except ValueError as error:
         raise ValueError("upload reconciliation settings must be numeric") from error
+    try:
+        auth_expire_minutes = int(os.getenv("AUTH_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+        auth_login_attempts = int(os.getenv("AUTH_LOGIN_MAX_ATTEMPTS", "5"))
+        auth_login_window = int(os.getenv("AUTH_LOGIN_WINDOW_SECONDS", "300"))
+    except ValueError as error:
+        raise ValueError("authentication numeric settings are invalid") from error
+
+    def csv_setting(name: str, default: str = "") -> tuple[str, ...]:
+        return tuple(
+            item.strip().lower()
+            for item in os.getenv(name, default).split(",")
+            if item.strip()
+        )
 
     def boolean_setting(name: str, default: str) -> bool:
         value = os.getenv(name, default).strip().lower()
@@ -221,6 +258,23 @@ def load_settings() -> CoordinatorSettings:
         reconciliation_max_attempts=reconciliation_attempts,
         reconciliation_max_concurrent_jobs=reconciliation_concurrency,
         reconciliation_transfer_timeout_seconds=reconciliation_timeout,
+        auth_jwt_secret=os.getenv(
+            "AUTH_JWT_SECRET",
+            "development-only-jwt-secret-change-me-0123456789abcdef",
+        ),
+        auth_jwt_algorithm=os.getenv("AUTH_JWT_ALGORITHM", "HS256"),
+        auth_access_token_expire_minutes=auth_expire_minutes,
+        auth_jwt_issuer=os.getenv("AUTH_JWT_ISSUER", "yachayrepo"),
+        auth_jwt_audience=os.getenv("AUTH_JWT_AUDIENCE", "yachayrepo-api"),
+        auth_allowed_email_domains=csv_setting("AUTH_ALLOWED_EMAIL_DOMAINS"),
+        auth_login_max_attempts=auth_login_attempts,
+        auth_login_window_seconds=auth_login_window,
+        cors_allowed_origins=csv_setting(
+            "CORS_ALLOWED_ORIGINS", "http://localhost:3000"
+        ),
+        storage_internal_token=os.getenv(
+            "STORAGE_INTERNAL_TOKEN", "!development-storage-token!"
+        ),
         database_url=os.getenv("DATABASE_URL"),
         technical_user_id=UUID(
             os.getenv(

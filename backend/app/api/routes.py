@@ -2,10 +2,11 @@
 
 import asyncio
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 import httpx
 
 from backend.app.config import CoordinatorSettings
+from backend.app.auth import Principal, get_current_principal
 from backend.app.schemas import CoordinatorHealth, NodesResponse
 from backend.app.services import check_node
 
@@ -20,9 +21,17 @@ async def coordinator_health() -> CoordinatorHealth:
 
 
 @router.get("/nodes", response_model=NodesResponse)
-async def nodes_health(request: Request) -> NodesResponse:
+async def nodes_health(
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+) -> NodesResponse:
     """Check all configured storage nodes concurrently and preserve their order."""
 
+    if not principal.is_super_admin and not any(
+        "school_admin" in roles for roles in principal.roles_by_school.values()
+    ):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="administrator role required")
     client: httpx.AsyncClient = request.app.state.http_client
     settings: CoordinatorSettings = request.app.state.settings
     statuses = await asyncio.gather(

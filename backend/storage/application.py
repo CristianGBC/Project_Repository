@@ -33,6 +33,7 @@ def create_app(
     data_root: Path | None = None,
     max_upload_size_bytes: int | None = None,
     repair_internal_token: str | None = None,
+    storage_internal_token: str | None = None,
 ) -> FastAPI:
     """Build one node using explicit values or its container environment."""
 
@@ -47,6 +48,9 @@ def create_app(
     configured_repair_token = repair_internal_token or os.getenv(
         "REPAIR_INTERNAL_TOKEN", "!development-repair-token!"
     )
+    configured_storage_token = storage_internal_token or os.getenv(
+        "STORAGE_INTERNAL_TOKEN"
+    )
     if configured_max_size <= 0:
         raise RuntimeError("MAX_UPLOAD_SIZE_MB must be greater than zero")
     document_store = DocumentStore(configured_data_root, configured_max_size)
@@ -54,6 +58,12 @@ def create_app(
     def require_repair_token(value: str | None) -> None:
         if value is None or not hmac.compare_digest(value, configured_repair_token):
             raise HTTPException(status_code=403, detail="invalid repair credential")
+
+    def require_storage_token(value: str | None) -> None:
+        if configured_storage_token is None:
+            return
+        if value is None or not hmac.compare_digest(value, configured_storage_token):
+            raise HTTPException(status_code=403, detail="invalid storage credential")
 
     application = FastAPI(
         title=f"YachayRepo Storage - {configured_node_id}",
@@ -94,7 +104,9 @@ def create_app(
         size_bytes: int = Form(...),
         sha256: str = Form(...),
         created_at: str = Form(...),
+        storage_token: str | None = Header(None, alias="X-Storage-Token"),
     ) -> StoredDocumentResponse:
+        require_storage_token(storage_token)
         if school_id != configured_node_id:
             raise HTTPException(status_code=400, detail="school_id does not match node")
         if school != configured_school:
@@ -123,7 +135,11 @@ def create_app(
         "/files/{document_id}/metadata",
         response_model=DocumentMetadata,
     )
-    async def document_metadata(document_id: str) -> DocumentMetadata:
+    async def document_metadata(
+        document_id: str,
+        storage_token: str | None = Header(None, alias="X-Storage-Token"),
+    ) -> DocumentMetadata:
+        require_storage_token(storage_token)
         try:
             return await document_store.load_metadata(document_id)
         except (
@@ -134,7 +150,11 @@ def create_app(
             raise storage_error(error) from error
 
     @application.get("/files/{document_id}", response_class=StreamingResponse)
-    async def download_document(document_id: str) -> StreamingResponse:
+    async def download_document(
+        document_id: str,
+        storage_token: str | None = Header(None, alias="X-Storage-Token"),
+    ) -> StreamingResponse:
+        require_storage_token(storage_token)
         try:
             path, metadata = await document_store.verified_document(document_id)
             source = path.open("rb")
