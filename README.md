@@ -1,5 +1,8 @@
 # YachayRepo
 
+La Fase 7.3 incorpora el [portal del profesor](docs/frontend-professor-portal.md)
+para publicar, versionar y gestionar documentos propios.
+
 La Fase 7.2 agrega el [portal académico y visor PDF](docs/frontend-academic-portal.md)
 con búsqueda, filtros, historial y descargas autenticadas.
 

@@ -68,7 +68,7 @@ def create_app(
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Authorization", "Content-Type"],
-        expose_headers=["Content-Disposition"],
+        expose_headers=["Content-Disposition", "X-Max-Upload-Bytes"],
     )
     application.include_router(router)
     application.include_router(authentication_router)
