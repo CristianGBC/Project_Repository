@@ -55,8 +55,12 @@ def _visible_user_query(principal: Principal):
     if principal.is_super_admin:
         return select(User)
     schools = _admin_schools(principal)
-    return select(User).distinct().join(SchoolMembership).where(
-        SchoolMembership.school_id.in_(schools)
+    return select(User).where(
+        select(SchoolMembership.id).where(
+            SchoolMembership.user_id == User.id,
+            SchoolMembership.school_id.in_(schools),
+            SchoolMembership.is_active.is_(True),
+        ).exists()
     )
 
 
@@ -96,6 +100,20 @@ def _require_global_account_scope(session, principal: Principal, user: User) -> 
         raise HTTPException(status_code=403, detail="shared or privileged account is outside administrator scope")
 
 
+def _scoped_summary(session, principal: Principal, user: User) -> UserSummary:
+    summary = user_summary(session, user)
+    if principal.is_super_admin:
+        summary.can_reset_password = True
+        return summary
+    schools = _admin_schools(principal)
+    summary.can_reset_password = summary.global_role is None and all(
+        not item.is_active or (item.school_id in schools and item.role != "school_admin")
+        for item in summary.memberships
+    )
+    summary.memberships = [item for item in summary.memberships if item.school_id in schools]
+    return summary
+
+
 @router.get("", response_model=list[UserSummary])
 def list_users(
     request: Request,
@@ -104,19 +122,38 @@ def list_users(
     limit: int = Query(50, ge=1, le=100),
     search: str | None = Query(None, max_length=100),
     is_active: bool | None = Query(None),
+    school_id: str | None = Query(None, max_length=30),
+    role: str | None = Query(None, pattern="^(student|professor|school_admin|super_admin)$"),
 ) -> list[UserSummary]:
     _require_administrator(principal)
     with request.app.state.session_factory() as session:
         query = _visible_user_query(principal)
         if search:
-            pattern = f"%{search.strip()}%"
             query = query.where(
-                or_(User.email.ilike(pattern), User.full_name.ilike(pattern))
+                or_(User.email.icontains(search.strip(), autoescape=True),
+                    User.full_name.icontains(search.strip(), autoescape=True))
             )
+        schools = _admin_schools(principal)
+        if school_id and not principal.is_super_admin and school_id not in schools:
+            raise HTTPException(403, "school is outside administrator scope")
+        if role == "super_admin":
+            query = query.where(User.global_role == role)
+        if school_id or (role and role != "super_admin"):
+            memberships = select(SchoolMembership.id).where(
+                SchoolMembership.user_id == User.id,
+                SchoolMembership.is_active.is_(True),
+            )
+            if not principal.is_super_admin:
+                memberships = memberships.where(SchoolMembership.school_id.in_(schools))
+            if school_id:
+                memberships = memberships.where(SchoolMembership.school_id == school_id)
+            if role and role != "super_admin":
+                memberships = memberships.where(SchoolMembership.role == role)
+            query = query.where(memberships.exists())
         if is_active is not None:
             query = query.where(User.is_active.is_(is_active))
         users = session.scalars(query.order_by(User.email).offset(offset).limit(limit)).all()
-        return [user_summary(session, user) for user in users]
+        return [_scoped_summary(session, principal, user) for user in users]
 
 
 @router.post("", response_model=UserSummary, status_code=201)
@@ -174,7 +211,7 @@ def create_user(
                 )
             _audit(session, principal, "create_user", user.id)
             session.flush()
-            return user_summary(session, user)
+            return _scoped_summary(session, principal, user)
     except IntegrityError as error:
         raise HTTPException(status_code=409, detail="email or membership already exists") from error
 
@@ -183,7 +220,7 @@ def create_user(
 def get_user(request: Request, user_id: UUID, principal: Principal = Depends(get_current_principal)) -> UserSummary:
     _require_administrator(principal)
     with request.app.state.session_factory() as session:
-        return user_summary(session, _get_visible_user(session, principal, user_id))
+        return _scoped_summary(session, principal, _get_visible_user(session, principal, user_id))
 
 
 @router.patch("/{user_id}", response_model=UserSummary)
@@ -232,7 +269,7 @@ def _set_active(request: Request, user_id: UUID, active: bool, principal: Princi
         user.updated_at = datetime.now(timezone.utc)
         _audit(session, principal, "activate_user" if active else "deactivate_user", user.id)
         session.flush()
-        return user_summary(session, user)
+        return _scoped_summary(session, principal, user)
 
 
 @router.post("/{user_id}/activate", response_model=UserSummary)
@@ -257,7 +294,7 @@ def reset_password(request: Request, user_id: UUID, payload: ResetPasswordReques
         user.updated_at = datetime.now(timezone.utc)
         _audit(session, principal, "reset_password", user.id)
         session.flush()
-        return user_summary(session, user)
+        return _scoped_summary(session, principal, user)
 
 
 @router.get("/{user_id}/memberships", response_model=list[MembershipResponse])
@@ -265,7 +302,7 @@ def memberships(request: Request, user_id: UUID, principal: Principal = Depends(
     _require_administrator(principal)
     with request.app.state.session_factory() as session:
         user = _get_visible_user(session, principal, user_id)
-        return user_summary(session, user).memberships
+        return _scoped_summary(session, principal, user).memberships
 
 
 @router.post("/{user_id}/memberships", response_model=MembershipResponse, status_code=201)

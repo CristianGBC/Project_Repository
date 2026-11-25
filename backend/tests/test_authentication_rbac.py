@@ -400,6 +400,51 @@ def test_school_admin_scope_and_admin_without_professor_cannot_upload(auth_catal
     assert escalated.status_code == outside.status_code == upload.status_code == 403
 
 
+def test_school_admin_user_reads_and_mutates_only_its_memberships(auth_catalog) -> None:
+    factory, settings = auth_catalog
+    administrator = create_user(factory, email=f"admin-scope-{uuid4()}@example.edu",
+                                memberships=(("school-math", "school_admin"),))
+    shared = create_user(factory, email=f"shared-{uuid4()}@example.edu",
+                         memberships=(("school-math", "student"), ("school-phy", "professor")))
+    token = token_for(administrator, settings)
+    path = f"/users/{shared.id}"
+    detail = api_request(factory, settings, "GET", path, token=token)
+    assert detail.status_code == 200
+    assert detail.json()["can_reset_password"] is False
+    assert [item["school_id"] for item in detail.json()["memberships"]] == ["school-math"]
+    assert api_request(factory, settings, "GET", "/users?school_id=school-phy", token=token).status_code == 403
+    assert api_request(factory, settings, "GET", "/operations/security-audit", token=token).status_code == 403
+    reset = api_request(factory, settings, "POST", path + "/reset-password", token=token,
+                        json={"temporary_password": PASSWORD})
+    assert reset.status_code == 403
+    added = api_request(factory, settings, "POST", path + "/memberships", token=token,
+                        json={"school_id": "school-math", "role": "professor"})
+    assert added.status_code == 201
+    assert api_request(factory, settings, "DELETE", path + "/memberships/" + added.json()["id"], token=token).status_code == 204
+
+
+def test_administrative_documents_scope_includes_legacy_without_owner(auth_catalog) -> None:
+    factory, settings = auth_catalog
+    administrator = create_user(factory, email=f"doc-admin-{uuid4()}@example.edu",
+                                memberships=(("school-math", "school_admin"),))
+    student = create_user(factory, email=f"doc-student-{uuid4()}@example.edu",
+                          memberships=(("school-math", "student"),))
+    inside, outside = uuid4(), uuid4()
+    with factory.begin() as session:
+        session.add_all([
+            Document(id=inside, title="Legacy in scope", school_id="school-math", created_by=student.id),
+            Document(id=outside, title="Legacy outside scope", school_id="school-phy", created_by=student.id),
+        ])
+    token = token_for(administrator, settings)
+    path = "/documents/admin/list"
+    listed = api_request(factory, settings, "GET", f"{path}?document_id={inside}", token=token)
+    assert listed.status_code == 200
+    assert listed.json()[0]["owner_name"] is None
+    assert api_request(factory, settings, "GET", f"{path}?document_id={outside}", token=token).json() == []
+    assert api_request(factory, settings, "GET", path, token=token_for(student, settings)).status_code == 403
+    assert api_request(factory, settings, "DELETE", f"/documents/{outside}", token=token).status_code == 403
+
+
 def test_membership_revocation_takes_effect_with_existing_jwt(auth_catalog) -> None:
     session_factory, settings = auth_catalog
     professor = create_user(

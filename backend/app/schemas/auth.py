@@ -39,6 +39,7 @@ class UserSummary(BaseModel):
     must_change_password: bool
     created_at: datetime
     memberships: list[MembershipResponse]
+    can_reset_password: bool | None = None
 
 
 class LoginResponse(BaseModel):

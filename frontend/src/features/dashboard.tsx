@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { House, UserRound, Menu, LogOut, ChevronDown, Building2, KeyRound, Library, Folder, FileUp, History, Trash2 } from 'lucide-react'
+import { House, UserRound, Menu, LogOut, ChevronDown, Building2, KeyRound, Library, Folder, FileUp, History, Trash2, UsersRound, BookOpen, Tags, Files, ShieldCheck } from 'lucide-react'
 import { api, keys, errorMessage, type School, type User } from '../api/session'
 import { Alert, Avatar, Badge, Button, Card, Dialog, DropdownMenu, Separator, Sheet, Skeleton } from '../components/ui'
 import { Brand } from './auth/screens'
-import { hasAnySchoolRole } from './auth/permissions'
+import { canManageUsers, hasAnySchoolRole, isSuperAdmin } from './auth/permissions'
 
 const navigation = [
   { to: '/', label: 'Inicio', icon: House },
@@ -19,19 +19,28 @@ const professorNavigation = [
   { to: '/professor/uploads', label: 'Mis subidas', icon: History },
   { to: '/professor/documents/deleted', label: 'Documentos eliminados', icon: Trash2 },
 ] as const
+const adminNavigation = [
+  { to: '/admin/users', label: 'Usuarios', icon: UsersRound, global: false },
+  { to: '/admin/subjects', label: 'Materias', icon: BookOpen, global: false },
+  { to: '/admin/document-types', label: 'Tipos documentales', icon: Tags, global: true },
+  { to: '/admin/documents', label: 'Documentos administrativos', icon: Files, global: false },
+  { to: '/admin/audit', label: 'Auditoría', icon: ShieldCheck, global: true },
+] as const
 const roles = { student: 'Estudiante', professor: 'Profesor', school_admin: 'Administrador de escuela' }
 const displayName = (user: User) => [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email
 function Navigation({ user, mobile = false }: { user: User; mobile?: boolean }) {
   const items = hasAnySchoolRole(user, 'professor') ? [...navigation, ...professorNavigation] : navigation
-  return <nav aria-label="Navegación principal">{items.map(({ to, label, icon: Icon }) => {
+  return <nav aria-label="Navegación principal">{[...items, ...(canManageUsers(user) ? adminNavigation.filter(item => !item.global || isSuperAdmin(user)) : [])].map(({ to, label, icon: Icon }, index) => {
     const link = <Link key={to} to={to} search={{}} activeOptions={{ exact: to === '/' || to.startsWith('/professor') }} className="nav-link"><Icon size={19} />{label}</Link>
-    return mobile ? <Dialog.Close key={to} asChild>{link}</Dialog.Close> : link
+    return <div key={to}>{index === items.length && <p className="admin-nav-title">Administración</p>}
+      {mobile ? <Dialog.Close asChild>{link}</Dialog.Close> : link}</div>
   })}</nav>
 }
 export function Layout({ user, logout, children }: { user: User; logout: () => void; children: ReactNode }) {
   const pathname = useLocation({ select: location => location.pathname })
-  const section = [...professorNavigation, ...navigation].find(item => item.to === pathname) ??
-    [...professorNavigation, ...navigation].find(item => item.to !== '/' && pathname.startsWith(item.to + '/'))
+  const sections = [...professorNavigation, ...navigation, ...adminNavigation]
+  const section = sections.find(item => item.to === pathname) ??
+    sections.find(item => item.to !== '/' && pathname.startsWith(item.to + '/'))
   return <div className="layout"><a className="skip" href="#content">Ir al contenido</a>
     <aside className="sidebar"><Brand /><Separator /><Navigation user={user} />
       <Button variant="ghost" className="sidebar-logout" onClick={logout}><LogOut size={18} />Cerrar sesión</Button>

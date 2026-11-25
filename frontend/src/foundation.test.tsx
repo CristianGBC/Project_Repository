@@ -83,7 +83,8 @@ it('valida el perfil, resuelve escuelas y muestra solo enlaces implementados', a
   show('/profile')
   expect(await screen.findByRole('heading', { name: 'Ana Pérez' })).toBeTruthy()
   expect(await screen.findByText('Matemáticas')).toBeTruthy()
-  expect(screen.queryByRole('link', { name: 'Usuarios' })).toBeNull()
+  expect(screen.getByRole('link', { name: /^Usuarios$/ })).toBeTruthy()
+  expect(screen.queryByRole('link', { name: 'Auditoría' })).toBeNull()
 })
 it('oculta el portal del profesor a administradores sin membresía docente y protege la URL', async () => {
   profile = { ...user, global_role: 'super_admin', memberships: user.memberships.filter(m => m.role !== 'professor') }
@@ -92,6 +93,15 @@ it('oculta el portal del profesor a administradores sin membresía docente y pro
   await screen.findByRole('heading', { name: 'Mi perfil' })
   expect(screen.queryByRole('link', { name: 'Mis documentos' })).toBeNull()
   await router.navigate({ to: '/professor/documents/new' })
+  await screen.findByRole('heading', { name: 'Acceso restringido' })
+})
+it('reserva auditoría a superadministración y rechaza administración para estudiantes', async () => {
+  profile = { ...user, memberships: user.memberships.filter(item => item.role === 'student') }
+  await session.login(user.email, 'password')
+  const router = show('/profile')
+  await screen.findByRole('heading', { name: 'Mi perfil' })
+  expect(screen.queryByRole('link', { name: /^Usuarios$/ })).toBeNull()
+  await router.navigate({ to: '/admin/users' })
   await screen.findByRole('heading', { name: 'Acceso restringido' })
 })
 it('explora con búsqueda diferida, reinicia la página al filtrar y limpia la URL', async () => {

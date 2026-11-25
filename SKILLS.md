@@ -48,6 +48,8 @@ python -m backend.app.seed
 
 ## Testing and Validation
 
+Para pruebas de alcance administrativo y credenciales temporales, sigue [la guía de la Fase 7.4](docs/frontend-administration.md) y usa cuentas del entorno aislado.
+
 Para validar el portal docente con reconciliación, usa el proyecto aislado descrito en [la guía de la Fase 7.3](docs/frontend-professor-portal.md).
 
 Para el portal, sigue la [guía académica](docs/frontend-academic-portal.md). Ejecuta las caídas de nodos exclusivamente con el proyecto Compose aislado.

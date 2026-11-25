@@ -20,6 +20,7 @@ from backend.app.models import (
     ReconciliationJob,
     ReconciliationAttempt,
     SecurityAuditEvent,
+    User,
 )
 from backend.app.schemas import (
     DocumentLifecycleResponse,
@@ -455,6 +456,48 @@ def my_uploads(
                 "versions": version_rows,
             })
         return results
+
+
+@router.get("/admin/list")
+def administrative_documents(
+    request: Request,
+    principal: Principal = Depends(get_current_principal),
+    school_id: str | None = Query(None, max_length=30),
+    document_id: UUID | None = Query(None),
+    document_type_id: str | None = Query(None, max_length=30),
+    deleted: bool = Query(False),
+    q: str | None = Query(None, max_length=200),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=100),
+) -> list[dict]:
+    schools = {school for school in principal.roles_by_school if principal.administers_school(school)}
+    if not principal.is_super_admin and (not schools or (school_id and school_id not in schools)):
+        raise HTTPException(403, "school is outside administrator scope")
+    query = select(Document).where(Document.deleted_at.is_not(None) if deleted else Document.deleted_at.is_(None))
+    if not principal.is_super_admin:
+        query = query.where(Document.school_id.in_(schools))
+    if school_id:
+        query = query.where(Document.school_id == school_id)
+    if document_type_id:
+        query = query.where(Document.document_type_id == document_type_id)
+    if document_id:
+        query = query.where(Document.id == document_id)
+    if q and q.strip():
+        query = query.where(Document.title.icontains(q.strip(), autoescape=True))
+    with request.app.state.session_factory() as session:
+        rows = session.scalars(query.order_by(Document.created_at.desc(), Document.id).offset(offset).limit(limit)).all()
+        result = []
+        for doc in rows:
+            owner = session.get(User, doc.owner_id) if doc.owner_id else None
+            current = session.get(DocumentVersion, doc.current_version_id) if doc.current_version_id else None
+            result.append({
+                "document_id": str(doc.id), "title": doc.title, "description": doc.description,
+                "school_id": doc.school_id, "owner_name": owner.full_name if owner else None,
+                "document_type_id": doc.document_type_id, "subject_ids": [str(item.id) for item in doc.subjects],
+                "created_at": doc.created_at, "updated_at": doc.updated_at, "deleted_at": doc.deleted_at,
+                "current_version": current.version_number if current and current.status == "available" else None,
+            })
+        return result
 
 
 @router.get("/{school_id}/{document_id}", response_model=DocumentMetadata)

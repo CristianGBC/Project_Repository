@@ -61,11 +61,14 @@ El catálogo central registra identidad, permisos, metadatos y estados. Los nodo
 - Fase 7.1. SPA de autenticación y perfil en español con React, TanStack Router y Query, Axios y modo claro. Playwright comprobó el flujo contra FastAPI y PostgreSQL aislados.
 - Fase 7.2. Consulta de escuelas y materias, búsqueda paginada, historial, descargas autenticadas y visor PDF con worker local. El E2E de laboratorio valida el visor con failover y compara SHA-256.
 - Fase 7.3. Portal docente con gestión de documentos propios, nuevas versiones, progreso HTTP y seguimiento de reconciliación.
-- Pendientes documentados. Paneles de administración y operaciones, despliegue físico Raspberry Pi, HA de PostgreSQL, OAuth, correo, cifrado de archivos y balanceo. RabbitMQ pertenece al prototipo en el estado observado.
+- Fase 7.4. Administración por escuela o global con cuentas, membresías, catálogos, documentos y auditoría de seguridad.
+- Pendientes documentados. Panel operativo, despliegue físico Raspberry Pi, HA de PostgreSQL, OAuth, correo, cifrado de archivos y balanceo. RabbitMQ pertenece al prototipo en el estado observado.
 - Validación local de este corte. Pytest se detuvo al importar `argon2` en la virtualenv existente, antes de recolectar pruebas. La guía de RBAC registra un E2E del 24 de noviembre con RF3, failover, reconciliación y revocación. Ese resultado es histórico. El estado de instancias en ejecución y la topología física no se comprobaron.
 - Algunas guías de etapas anteriores conservan referencias a RF=1 o revisiones antiguas. Comprueba el head en el código y el estado de la base de destino antes de usar procedimientos históricos.
 
 ## Documentation Index
+
+- [Administración 7.4](docs/frontend-administration.md) para alcance por rol, cuentas, catálogos, documentos y auditoría.
 
 - [Portal del profesor 7.3](docs/frontend-professor-portal.md) para mutaciones documentales, progreso y seguimiento de reconciliación propia.
 
