@@ -10,8 +10,10 @@ import pytest
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
-from backend.app.database import get_database_url
-from backend.app.models import Base
+from backend.app.database import create_session_factory, get_database_url
+from backend.app.models import Base, PhysicalHost, School, StorageNode
+from backend.app.physical_catalog import configure, runtime_urls, url_key
+from backend.app.seed import NODES, SCHOOLS
 
 EXPECTED_TABLES = {
     "schools",
@@ -79,6 +81,36 @@ def expect_integrity_error(database_engine, statement: str, parameters: dict) ->
     with pytest.raises(IntegrityError):
         with database_engine.begin() as connection:
             connection.execute(text(statement), parameters)
+
+
+def test_physical_catalog_preview_and_idempotent_apply(database_engine, monkeypatch) -> None:
+    addresses = {
+        "raspberry-1": "192.0.2.1",
+        "raspberry-2": "192.0.2.2",
+        "raspberry-3": "192.0.2.3",
+        "raspberry-4": "192.0.2.4",
+    }
+    with create_session_factory(database_engine)() as session:
+        session.add_all(School(**school) for school in SCHOOLS)
+        session.add_all(
+            PhysicalHost(id=host, hostname=host, device_type="raspberry_pi")
+            for host in addresses
+        )
+        session.flush()
+        session.add_all(StorageNode(**node) for node in NODES)
+        session.flush()
+        for node in NODES:
+            monkeypatch.setenv(
+                url_key(node["id"]),
+                f'http://{addresses[node["physical_host_id"]]}:{node["port"]}',
+            )
+        configure(session, apply=False, verified=False)
+        assert session.get(PhysicalHost, "raspberry-4").ip_address is None
+        configure(session, apply=True, verified=False)
+        configure(session, apply=True, verified=False)
+        assert runtime_urls(session)["NODE_AGRO_URL"] == "http://192.0.2.4:8006"
+        assert session.get(StorageNode, "node-agro").physical_host_id == "raspberry-4"
+        assert session.get(PhysicalHost, "raspberry-4").hostname == "IdeaPad-5"
 
 
 @pytest.fixture(scope="module")

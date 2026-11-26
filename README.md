@@ -131,6 +131,10 @@ implementación no importa ni modifica esos servicios.
 
 ## Perfiles de despliegue
 
+Para los cinco equipos de la Fase 8.3 usa los proyectos independientes de
+`infrastructure/deployment/` y la [guía de despliegue físico](docs/physical-deployment.md).
+Los perfiles siguientes corresponden al desarrollo y al entorno anterior.
+
 Compose dispone de perfiles independientes:
 
 - `coordinator`: inicia únicamente el coordinador.

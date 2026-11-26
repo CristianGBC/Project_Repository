@@ -67,6 +67,11 @@ Los escenarios E2E documentados usan `infrastructure/docker/compose.rf3-test.yam
 
 ## Docker and Infrastructure
 
+Usa [la guía de despliegue físico](docs/physical-deployment.md) para 8.3.
+Valida el Compose del dispositivo y revisa `physical_catalog preview` antes
+de actualizar destinos. Confirma los archivos de las réplicas antes de cambiar
+rutas con datos y preserva los volúmenes del entorno anterior.
+
 ```bash
 docker compose --env-file .env -f infrastructure/docker/compose.yaml \
   --profile coordinator --profile storage --profile monitor --profile repair \
