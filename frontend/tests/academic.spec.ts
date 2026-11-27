@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { expect, test, type APIRequestContext } from '@playwright/test'
 
 const base = 'http://127.0.0.1:18000'
-const compose = ['compose', '-p', 'yachayrepo-academic-validation', '-f', '../infrastructure/docker/compose.rf3-test.yaml']
+const compose = ['compose', '-p', process.env.E2E_ISOLATED_PROJECT ?? 'yachayrepo-academic-validation', '-f', '../infrastructure/docker/compose.rf3-test.yaml']
 const nodes = ['math', 'phy', 'bio', 'chem', 'earth', 'agro'].map(id => `node-${id}-test`)
 function pdf(pages: number) {
   const objects = [

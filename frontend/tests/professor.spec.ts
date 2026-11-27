@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 
 const base = 'http://127.0.0.1:18000'
-const docker = ['compose', '-p', 'yachayrepo-professor-validation', '-f', '../infrastructure/docker/compose.rf3-test.yaml']
+const docker = ['compose', '-p', process.env.E2E_ISOLATED_PROJECT ?? 'yachayrepo-professor-validation', '-f', '../infrastructure/docker/compose.rf3-test.yaml']
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 function testPdf(color: string) {
   const drawing = `${color} rg 20 20 120 80 re f\n`
@@ -159,9 +159,18 @@ test('profesor publica, versiona, edita, elimina y restaura con FastAPI real', a
       await page.getByRole('link', { name: 'Consultar Mis subidas' }).click()
       await expect(page.getByText(/Pendiente|Esperando recuperación|En recuperación/).first()).toBeVisible()
       expect((await visible())[0].version_number).toBe(2)
+      const jobs = async () => (await request.get(base + '/operations/reconciliation/jobs', {
+        headers: admin, params: { document_id: id },
+      })).json() as Promise<{ id: string; status: string }[]>
+      const jobsBeforeRecovery = new Set((await jobs()).map(job => job.id))
       service('start', 'node-math-test'); nodeStopped = false
       service('start', 'upload-reconciler-test'); workerStopped = false
       await expect.poll(async () => (await visible())[0]?.version_number, { timeout: 35000 }).toBe(3)
+      const recoveredJob = (await jobs()).find(job => !jobsBeforeRecovery.has(job.id))
+      expect(recoveredJob?.status).toBe('completed')
+      const attemptResponse = await request.get(base + `/operations/reconciliation/jobs/${recoveredJob!.id}/attempts`, { headers: admin })
+      expect(attemptResponse.ok()).toBeTruthy()
+      expect((await attemptResponse.json()).some((attempt: { outcome: string }) => attempt.outcome === 'completed')).toBeTruthy()
       const recovered = page.locator('.version-row').filter({ hasText: 'Versión 3 · notas-v3.txt' })
       await expect(recovered.getByText('Actual', { exact: true })).toBeVisible({ timeout: 12000 })
     }

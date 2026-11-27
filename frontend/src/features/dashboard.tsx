@@ -25,6 +25,7 @@ const adminNavigation = [
   { to: '/admin/document-types', label: 'Tipos documentales', icon: Tags, global: true },
   { to: '/admin/documents', label: 'Documentos administrativos', icon: Files, global: false },
   { to: '/admin/audit', label: 'Auditoría', icon: ShieldCheck, global: true },
+  { to: '/admin/operations', label: 'Monitorización', icon: Building2, global: false },
 ] as const
 const roles = { student: 'Estudiante', professor: 'Profesor', school_admin: 'Administrador de escuela' }
 const displayName = (user: User) => [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email

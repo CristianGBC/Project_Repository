@@ -29,6 +29,8 @@ class ReplicationDeficit:
 
 def find_replication_deficits(
     session_factory: sessionmaker[Session],
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[ReplicationDeficit]:
     """Return available versions that have fewer accessible copies than target."""
 
@@ -40,13 +42,14 @@ def find_replication_deficits(
     )
     healthy = DocumentReplica.status == "healthy"
     with session_factory() as session:
-        rows = session.execute(
+        accessible_count = func.count(DocumentReplica.id).filter(accessible)
+        query = (
             select(
                 DocumentVersion.id,
                 DocumentVersion.target_replicas,
                 func.count(DocumentReplica.id),
                 func.sum(case((healthy, 1), else_=0)),
-                func.sum(case((accessible, 1), else_=0)),
+                accessible_count,
             )
             .join(
                 DocumentReplica,
@@ -65,7 +68,10 @@ def find_replication_deficits(
             )
             .where(DocumentVersion.status == "available")
             .group_by(DocumentVersion.id, DocumentVersion.target_replicas)
-        ).all()
+            .having(accessible_count < DocumentVersion.target_replicas)
+            .order_by(DocumentVersion.id)
+        )
+        rows = session.execute(query.offset(offset).limit(limit)).all()
 
     deficits = [
         ReplicationDeficit(
@@ -77,4 +83,4 @@ def find_replication_deficits(
         )
         for row in rows
     ]
-    return [item for item in deficits if item.operational_deficit > 0]
+    return deficits

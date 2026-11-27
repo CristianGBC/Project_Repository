@@ -68,6 +68,9 @@ El catálogo central registra identidad, permisos, metadatos y estados. Los nodo
 
 ## Documentation Index
 
+- [Monitorización distribuida](docs/frontend-distributed-dashboard.md) y
+  [auditoría de consistencia](docs/distributed-consistency-audit.md).
+
 - [Despliegue físico (8.3)](docs/physical-deployment.md). Compose por dispositivo,
   PostgreSQL existente en IdeaPad-5 y rutas de almacenamiento desde el catálogo.
   El ID `raspberry-4` se conserva para Agroindustria.
