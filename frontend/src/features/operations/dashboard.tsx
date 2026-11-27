@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { api, keys, type School } from '../../api/session'
+import { Badge, Skeleton } from '../../components/ui'
 
 type Host = { id: string; hostname: string; device_type: string; ip_address: string | null; is_active: boolean }
 type Node = { id: string; home_school_id: string; physical_host_id: string; health: string; port?: number; replica_count?: number; is_active: boolean; last_seen_at: string | null; health_changed_at: string | null }
@@ -137,6 +138,7 @@ export function Operations({ page, id, global }: { page: Page; id?: string; glob
       <span aria-live="polite">{updated ? 'Última actualización ' + date(new Date(updated).toISOString()) : 'Esperando datos'}{queries.some(query => query.isFetching) && ' · Actualizando'}</span>
     </div>
     {queries.some(query => query.isError) && <p role="alert">Error de comunicación con el coordinador. Los datos anteriores pueden estar desactualizados.</p>}
+    {queries.some(query => query.isPending && query.isFetching) && <Skeleton />}
     {page === 'overview' && nodes.data && <div className="ops-grid">
       <article className="ops-panel"><h2>Nodos lógicos</h2><strong>{nodes.data.length}</strong><p>{['up', 'down', 'unknown'].map(status => status.toUpperCase() + ' ' + nodes.data.filter(node => node.health === status).length).join(' · ')}</p></article>
       {global && hosts.data && <article className="ops-panel"><h2>Hosts físicos</h2><strong>{groups.length}</strong><p>Habilitados {hosts.data.filter(host => host.is_active).length}</p>
@@ -156,7 +158,7 @@ export function Operations({ page, id, global }: { page: Page; id?: string; glob
       {nodes.data && <Table headings={['Nodo', 'Escuela', 'Host', ...(global ? ['Dirección', 'Puerto', 'Réplicas'] : []), 'Administración', 'Salud', 'Última comunicación', 'Cambio de salud']}
         rows={selectedNodes.map(node => [global ? <Link to="/admin/operations/nodes/$nodeId" params={{ nodeId: node.id }}>{node.id}</Link> : node.id,
           schoolName(node.home_school_id), node.physical_host_id, ...(global ? [hosts.data?.find(host => host.id === node.physical_host_id)?.ip_address ?? '—', node.port ?? '—', node.replica_count ?? '—'] : []),
-          node.is_active ? 'Habilitado' : 'Deshabilitado', node.health.toUpperCase(), date(node.last_seen_at), date(node.health_changed_at)])} />}
+          node.is_active ? 'Habilitado' : 'Deshabilitado', <Badge>{node.health.toUpperCase()}</Badge>, date(node.last_seen_at), date(node.health_changed_at)])} />}
     </>}
     {page === 'replicas' && <div className="ops-toolbar">{input('Documento (UUID)', 'document_id')}{input('Versión (UUID)', 'version_id')}{input('Nodo', 'node_id')}{input('Host', 'host_id')}{options('Integridad', 'status', ['healthy', 'pending', 'missing', 'corrupted', 'failed'])}</div>}
     {(['replicas', 'node'].includes(page) || repairView) && replicas.data && <Table headings={['Documento', 'Versión', 'Nodo', 'Host', 'Integridad', 'Intentos', 'Verificada', 'Próximo intento', 'Error']}

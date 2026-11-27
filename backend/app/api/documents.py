@@ -203,6 +203,7 @@ def update_document_subjects(
         request.app.state.session_factory,
         document_id,
         payload.subject_ids,
+        payload.metadata_revision,
     )
 
 
@@ -244,22 +245,22 @@ async def read_document_versions(
         request.app.state.session_factory,
         document_id,
     )
-    try:
-        parsed = UUID(document_id)
-    except ValueError:
-        return history
     with request.app.state.session_factory() as session:
-        document = session.get(Document, parsed)
+        document = session.get(Document, history.document_id)
         may_manage = document is not None and (
-            document.owner_id == principal.user_id
-            or principal.administers_school(document.school_id)
+            principal.administers_school(document.school_id)
+            or (document.owner_id == principal.user_id
+                and principal.has_school_role(document.school_id, "professor"))
         )
     if may_manage:
         return history
+    available = [item for item in history.versions if item.status == "available"]
+    if not available:
+        raise HTTPException(404, "document does not exist")
     return DocumentVersionHistory(
         document_id=history.document_id,
         current_version_id=history.current_version_id,
-        versions=[item for item in history.versions if item.status == "available"],
+        versions=available,
     )
 
 
@@ -330,13 +331,15 @@ async def update_document_metadata(
     principal: Principal = Depends(get_current_principal),
 ) -> DocumentMetadata:
     visible = _managed_document(request, principal, document_id)
-    values = payload.model_dump(exclude_unset=True)
+    values = payload.model_dump(exclude_unset=True, exclude={"metadata_revision"})
     with request.app.state.session_factory.begin() as session:
         document = session.scalar(
             select(Document).where(Document.id == visible.id).with_for_update()
         )
         if document is None or document.deleted_at is not None:
             raise HTTPException(status_code=404, detail="document does not exist")
+        if document.metadata_revision != payload.metadata_revision:
+            raise HTTPException(409, "metadata revision conflict")
         if "document_type_id" in values or "subject_ids" in values:
             type_id = values.get("document_type_id", document.document_type_id)
             document_type = session.get(DocumentType, type_id) if type_id else None
@@ -353,6 +356,7 @@ async def update_document_metadata(
             if field in values:
                 setattr(document, field, values[field])
         document.updated_at = datetime.now(timezone.utc)
+        document.metadata_revision += 1
         session.add(
             SecurityAuditEvent(
                 id=uuid4(),
@@ -387,8 +391,13 @@ def my_uploads(
     limit: int | None = Query(None, ge=1, le=100),
 ) -> list[dict]:
     response.headers["X-Max-Upload-Bytes"] = str(request.app.state.settings.max_upload_size_bytes)
+    professor_schools = [
+        school for school, roles in principal.roles_by_school.items() if "professor" in roles
+    ]
     with request.app.state.session_factory() as session:
-        query = select(Document).where(Document.owner_id == principal.user_id)
+        query = select(Document).where(
+            Document.owner_id == principal.user_id, Document.school_id.in_(professor_schools)
+        )
         if deleted is not None:
             query = query.where(Document.deleted_at.is_not(None) if deleted else Document.deleted_at.is_(None))
         if school_id is not None:
@@ -422,6 +431,7 @@ def my_uploads(
                         "version_id": str(version.id),
                         "version_number": version.version_number,
                         "status": version.status,
+                        "publication_cancelled": version.publication_cancelled,
                         "filename": version.filename,
                         "size_bytes": version.size_bytes,
                         "created_at": version.created_at,
@@ -429,7 +439,7 @@ def my_uploads(
                         "next_attempt_at": job.next_attempt_at if job else None,
                         "reconciliation_status": job.status if job else None,
                         "awaiting_reconciliation": bool(
-                            job is None and version.status == "failed"
+                            job is None and version.status == "failed" and not version.publication_cancelled
                             and session.scalar(
                                 select(DocumentReplica.id)
                                 .where(
@@ -449,6 +459,7 @@ def my_uploads(
                 "description": document.description,
                 "document_type_id": document.document_type_id,
                 "subject_ids": [str(subject.id) for subject in document.subjects],
+                "metadata_revision": document.metadata_revision,
                 "created_at": document.created_at,
                 "updated_at": document.updated_at,
                 "current_version_id": str(document.current_version_id) if document.current_version_id else None,
@@ -494,6 +505,7 @@ def administrative_documents(
                 "document_id": str(doc.id), "title": doc.title, "description": doc.description,
                 "school_id": doc.school_id, "owner_name": owner.full_name if owner else None,
                 "document_type_id": doc.document_type_id, "subject_ids": [str(item.id) for item in doc.subjects],
+                "metadata_revision": doc.metadata_revision,
                 "created_at": doc.created_at, "updated_at": doc.updated_at, "deleted_at": doc.deleted_at,
                 "current_version": current.version_number if current and current.status == "available" else None,
             })

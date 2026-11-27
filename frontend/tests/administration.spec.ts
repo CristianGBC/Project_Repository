@@ -132,6 +132,16 @@ test('administra cuentas, catálogos y documentos con alcance escolar', async ({
     await page.goto('/admin/documents/' + docId)
     await page.getByRole('link', { name: 'Editar metadatos' }).click()
     await page.getByLabel('Título', { exact: true }).fill('Editado ' + suffix)
+    const concurrent = await request.patch(base + '/documents/' + docId, {
+      headers: professor.headers, data: { title: 'Cambio concurrente ' + suffix, metadata_revision: 1 },
+    })
+    expect(concurrent.ok()).toBeTruthy()
+    await page.getByRole('button', { name: 'Guardar metadatos' }).click()
+    await expect(page.getByText(/El documento cambió desde que abriste/)).toBeVisible()
+    await expect(page.getByLabel('Título', { exact: true })).toHaveValue('Editado ' + suffix)
+    await page.getByRole('button', { name: 'Consultar datos actualizados' }).click()
+    await expect(page.getByText('Título actual Cambio concurrente ' + suffix)).toBeVisible()
+    await page.getByRole('button', { name: 'Usar esta revisión para volver a guardar' }).click()
     await page.getByRole('button', { name: 'Guardar metadatos' }).click()
     await expect(page.getByRole('heading', { name: 'Editar Editado ' + suffix })).toBeVisible()
     await page.goto('/admin/documents/' + docId)

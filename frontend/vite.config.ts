@@ -5,5 +5,6 @@ import tailwind from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwind()],
   server: { port: 5173, strictPort: true },
+  build: { rollupOptions: { output: { manualChunks: { validation: ['zod'] } } } },
   test: { environment: 'jsdom', include: ['src/**/*.test.ts*'] },
 })

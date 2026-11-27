@@ -23,6 +23,9 @@ nodos institucionales distribuidos entre dos computadoras Ubuntu.
 
 ## Arquitectura implementada
 
+La [integración final](docs/frontend-final-integration.md) documenta
+las revisiones de metadatos y la cancelación de publicaciones por borrado.
+
 La [monitorización distribuida](docs/frontend-distributed-dashboard.md) reúne
 topología, salud, réplicas por versión y reconciliación en `/admin/operations`.
 

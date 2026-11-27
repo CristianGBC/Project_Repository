@@ -34,7 +34,8 @@ test('observa failover, reparación, exceso y borrado en Docker aislado', async 
   const email = process.env.E2E_ADMIN_EMAIL
   const password = process.env.E2E_ADMIN_PASSWORD
   const base = 'http://127.0.0.1:18000'
-  test.skip(project !== 'yachayrepo-75-browser' || process.env.VITE_API_BASE_URL !== base || !email || !password, 'Requiere el proyecto Docker aislado de 7.5')
+  test.skip(!['yachayrepo-75-browser', 'yachayrepo-76-browser'].includes(project ?? '') ||
+    process.env.VITE_API_BASE_URL !== base || !email || !password, 'Requiere un proyecto Docker aislado de pruebas')
   test.setTimeout(120000)
   const compose = (args: string[], cleanup = 'false') => execFileSync('docker',
     ['compose', '-p', project!, '-f', '../infrastructure/docker/compose.rf3-test.yaml', '--profile', 'monitor', '--profile', 'repair', ...args],
@@ -100,6 +101,11 @@ test('observa failover, reparación, exceso y borrado en Docker aislado', async 
     await expect(page.getByText('Documento eliminado lógicamente', { exact: false })).toBeVisible({ timeout: 15000 })
   } finally {
     compose(['start', 'node-math-test'])
+    await expect.poll(async () => {
+      const response = await request.get(base + '/operations/nodes', { headers: admin })
+      const rows = await response.json() as { id: string; health: string }[]
+      return rows.find(row => row.id === 'node-math')?.health
+    }, { timeout: 20000 }).toBe('up')
     compose(['stop', 'replica-repair-test', 'health-monitor-test'])
   }
 })

@@ -1,5 +1,16 @@
 # Auditoría de consistencia distribuida · Fase 7.5
 
+## Actualización de la Fase 7.6
+
+La carrera descrita en la auditoría original está corregida. El borrado
+cancela versiones pendientes o fallidas bajo el lock del documento. La
+cancelación persiste después de restaurar y ambos publicadores la comprueban.
+Los archivos y referencias se conservan. El control optimista sustituye la
+última escritura sobre el mismo campo entre formularios que comparten una
+revisión. El versionamiento del archivo mantiene sus bloqueos pesimistas.
+Las lecturas académicas entre escuelas son intencionales para usuarios
+autenticados y documentos publicados. [Política actual](frontend-final-integration.md).
+
 | Comportamiento | Garantía y evidencia | Pruebas y límites |
 |---|---|---|
 | Detección y recuperación | `health_monitor.py`, `run` y `check_cycle` esperan un ciclo completo, incluidas las escrituras, y después el intervalo. Las sondas HTTP se lanzan con `asyncio.gather`. `node_health.py:probe_node` aplica el timeout HTTP y verifica servicio, ID y respuesta. `_persist_observations` mantiene contadores consecutivos por nodo, actualiza `last_seen_at` en cada éxito y `health_changed_at` al cambiar `health`. | `test_health_monitor.py` cubre concurrencia, timeouts, umbrales, recuperación y reinicios. Los contadores se reinician con el proceso. Con 5 s, timeout nominal 2 s y ciclos uniformes, tres fallos inmediatos tardan aproximadamente 10–15 s y tres fallos por timeout 16–21 s, medidos desde un fallo antes de una sonda o durante la espera entre ciclos. Dos éxitos rápidos tardan aproximadamente 5–10 s. La latencia del ciclo, SQL y la semántica de timeout por operación HTTP pueden ampliar esas cifras. |

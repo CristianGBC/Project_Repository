@@ -6,6 +6,7 @@ from dataclasses import replace
 import hashlib
 import os
 from pathlib import Path
+from threading import Barrier, Event
 from uuid import uuid4
 
 from alembic import command
@@ -794,6 +795,73 @@ def test_concurrent_rf3_versions_remain_unique_and_fully_replicated(
             assert len({replica.physical_host_id for replica in replicas}) == 3
 
 
+@pytest.mark.parametrize("action", ["delete", "restore", "newer"])
+def test_inflight_publication_respects_lifecycle_and_order(catalog_session_factory, action) -> None:
+    storage = memory_storage_handler()
+    first = _create_versioned_document(storage, catalog_session_factory)
+    path = f"/documents/{first['document_id']}"
+    started = Event()
+    resume = Event()
+
+    async def delayed(request):
+        started.set()
+        assert await asyncio.to_thread(resume.wait, 15)
+        return await storage(request)
+
+    def upload(handler, filename):
+        return _request(handler, catalog_session_factory, path + "/versions", method="POST",
+                        files={"file": (filename, b"test contents", "text/plain")})
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(upload, delayed, "version-2.txt")
+        try:
+            assert started.wait(15)
+            if action == "newer":
+                latest = upload(storage, "version-3.txt")
+                assert latest.status_code == 201
+                assert latest.json()["version_number"] == 3
+            else:
+                assert _request(storage, catalog_session_factory, path, method="DELETE").status_code == 200
+                if action == "restore":
+                    assert _request(storage, catalog_session_factory, path + "/restore", method="POST").status_code == 200
+        finally:
+            resume.set()
+        assert pending.result(15).status_code == (201 if action == "newer" else 409)
+    with catalog_session_factory() as session:
+        document = session.get(Document, first["document_id"])
+        current = session.get(DocumentVersion, document.current_version_id)
+        assert current.version_number == (3 if action == "newer" else 1)
+        assert (document.deleted_at is not None) == (action == "delete")
+        cancelled = session.scalar(select(DocumentVersion).where(
+            DocumentVersion.document_id == document.id, DocumentVersion.version_number == 2
+        ))
+        if action != "newer":
+            assert cancelled.publication_cancelled and cancelled.status == "failed"
+            assert session.scalar(select(DocumentReplica).where(
+                DocumentReplica.version_id == cancelled.id
+            )).status == "healthy"
+
+
+def test_concurrent_metadata_updates_accept_only_one_writer(catalog_session_factory) -> None:
+    storage = memory_storage_handler()
+    first = _create_versioned_document(storage, catalog_session_factory)
+    path = f"/documents/{first['document_id']}"
+    start = Barrier(2)
+
+    def change(title):
+        start.wait(timeout=10)
+        return _request(storage, catalog_session_factory, path, method="PATCH",
+                        json={"title": title, "metadata_revision": 1})
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(change, ("Primera edición", "Segunda edición")))
+    assert sorted(response.status_code for response in results) == [200, 409]
+    winner = next(response.json() for response in results if response.status_code == 200)
+    assert winner["metadata_revision"] == 2
+    current = _request(storage, catalog_session_factory, f"/documents/school-math/{first['document_id']}")
+    assert current.json()["title"] == winner["title"]
+
+
 def test_metadata_survives_new_coordinator_and_download_uses_catalog_location(
     catalog_session_factory,
 ) -> None:
@@ -1406,14 +1474,14 @@ def test_replace_subjects_preserves_versions_and_enforces_type_rule(
         catalog_session_factory,
         f"/documents/{document_id}/subjects",
         method="PUT",
-        json={"subject_ids": [second_subject["id"]]},
+        json={"subject_ids": [second_subject["id"]], "metadata_revision": 1},
     )
     rejected_empty = _request(
         handler,
         catalog_session_factory,
         f"/documents/{document_id}/subjects",
         method="PUT",
-        json={"subject_ids": []},
+        json={"subject_ids": [], "metadata_revision": 2},
     )
     after = _request(
         handler,

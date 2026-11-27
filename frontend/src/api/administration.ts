@@ -5,6 +5,7 @@ import { canManageSchool, isSuperAdmin } from '../features/auth/permissions'
 export type ManagedUser = User & { created_at: string; can_reset_password: boolean }
 export type MembershipInput = { school_id: string; role: SchoolRole }
 export interface ManagedDocument {
+  metadata_revision: number
   document_id: string; title: string; description: string | null; school_id: string
   owner_name: string | null; document_type_id: string | null; subject_ids: string[]
   created_at: string; updated_at: string; deleted_at: string | null; current_version: number | null
