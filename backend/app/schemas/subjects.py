@@ -51,8 +51,10 @@ class DocumentSubjectsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     subject_ids: list[UUID]
+    metadata_revision: int = Field(ge=1)
 
 
 class DocumentSubjectsResponse(BaseModel):
     document_id: UUID
     subjects: list[SubjectSummary]
+    metadata_revision: int

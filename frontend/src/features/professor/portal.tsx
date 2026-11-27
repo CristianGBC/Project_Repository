@@ -8,6 +8,7 @@ import { isUuid, schoolsQuery, subjectsQuery, typesQuery } from '../../api/acade
 import { affectedDocuments, ownQuery, publish, uploadForm, uploadInProgress, uploadLabel, type MetadataInput, type OwnDocument } from '../../api/professor'
 import { Alert, Badge, Button, Card, Dialog, Input, Skeleton } from '../../components/ui'
 import { canUploadToSchool } from '../auth/permissions'
+import { useMetadataConflict } from '../metadata-conflict'
 
 const formatDate = (value: string) => new Date(value).toLocaleString('es-EC')
 const pageSize = 12
@@ -155,6 +156,7 @@ export function ProfessorDocument({ id, user, mode }: { id: string; user: User; 
 }
 
 export function ProfessorForm({ user, doc, mode = 'new' }: { user: User; doc?: OwnDocument; mode?: 'new' | 'edit' | 'version' }) {
+  const concurrency = useMetadataConflict(doc)
   const [school, setSchool] = useState(doc?.school_id ?? '')
   const [title, setTitle] = useState(doc?.title ?? '')
   const [description, setDescription] = useState(doc?.description ?? '')
@@ -193,7 +195,7 @@ export function ProfessorForm({ user, doc, mode = 'new' }: { user: User; doc?: O
   }, [])
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (request.current || uncertain || result) return
+    if (request.current || uncertain || result || concurrency.conflict) return
     setMessage('')
     if (!school || !canUploadToSchool(user, school) || (mode === 'new' && !choices.some(item => item.id === school))) {
       setMessage('Selecciona una escuela en la que tengas una membresía activa de profesor.')
@@ -216,7 +218,7 @@ export function ProfessorForm({ user, doc, mode = 'new' }: { user: User; doc?: O
     const metadata: MetadataInput = { title: title.trim(), description: description.trim(), document_type_id: type || null, subject_ids: subjects }
     try {
       if (mode === 'edit') {
-        await api.patch(`/documents/${doc!.document_id}`, metadata, { signal: controller.signal })
+        await api.patch(`/documents/${doc!.document_id}`, { ...metadata, metadata_revision: concurrency.revision }, { signal: controller.signal })
         if (request.current !== controller) return
         setResult({ id: doc!.document_id, published: true })
         toast.success('Metadatos actualizados.')
@@ -230,6 +232,7 @@ export function ProfessorForm({ user, doc, mode = 'new' }: { user: User; doc?: O
     } catch (cause) {
       if (request.current !== controller) return
       const status = isAxiosError(cause) ? cause.response?.status : undefined
+      if (mode === 'edit' && status === 409) { concurrency.flag(); return }
       if (mode !== 'edit' && (!status || status >= 500)) {
         const detail: unknown = isAxiosError(cause) ? cause.response?.data?.detail : undefined
         if (detail && typeof detail === 'object' && 'document_id' in detail && isUuid(detail.document_id)) {
@@ -237,6 +240,9 @@ export function ProfessorForm({ user, doc, mode = 'new' }: { user: User; doc?: O
         }
         setUncertain(true)
         setMessage('El servidor puede haber registrado la operación. Consulta Mis subidas antes de repetirla.')
+        await refresh()
+      } else if (mode === 'version' && status === 409) {
+        setMessage('El documento fue eliminado durante la subida. La versión no se publicó.')
         await refresh()
       } else if (status === 413) setMessage('El archivo supera el límite del coordinador.')
       else if (status === 422) setMessage('Revisa los campos obligatorios, las materias y el archivo.')
@@ -287,7 +293,8 @@ export function ProfessorForm({ user, doc, mode = 'new' }: { user: User; doc?: O
           {schools.isError && <QueryError error={schools.error} retry={() => void schools.refetch()} />}
           {mode !== 'version' && types.isError && <QueryError error={types.error} retry={() => void types.refetch()} />}
           {mode !== 'version' && compatible.isError && <QueryError error={compatible.error} retry={() => void compatible.refetch()} />}
-          <Button>{mode === 'edit' ? 'Guardar cambios' : 'Enviar archivo'}</Button>
+          {concurrency.notice}
+          <Button disabled={concurrency.conflict}>{mode === 'edit' ? 'Guardar cambios' : 'Enviar archivo'}</Button>
         </fieldset>
       </form>}
       {busy && <div role="status">{mode === 'edit' ? 'Guardando…' : progress === 100 ? 'Procesando publicación…' : progress === null ? 'Transfiriendo archivo…' : `Transfiriendo archivo · ${progress}%`}

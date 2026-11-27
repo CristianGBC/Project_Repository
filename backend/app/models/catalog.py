@@ -189,6 +189,7 @@ class Document(Base):
     current_version_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True)
     )
+    metadata_revision: Mapped[int] = mapped_column(Integer, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
     deleted_at: Mapped[datetime | None] = mapped_column(timestamp)
@@ -235,6 +236,7 @@ class DocumentVersion(Base):
     created_at: Mapped[datetime] = mapped_column(timestamp, server_default=func.now())
     committed_at: Mapped[datetime | None] = mapped_column(timestamp)
     change_description: Mapped[str | None] = mapped_column(Text)
+    publication_cancelled: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
 
 
 class PhysicalHost(Base):

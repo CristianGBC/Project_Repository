@@ -5,6 +5,8 @@ import { schoolsQuery, subjectsQuery, typesQuery, type DocumentType, type Subjec
 import { api, type User } from '../../api/session'
 import { Alert, Badge, Button, Card, Input } from '../../components/ui'
 import { canManageSchool } from '../auth/permissions'
+import { isAxiosError } from 'axios'
+import { useMetadataConflict } from '../metadata-conflict'
 import { Confirm, Results, useAdminAction } from './ui'
 
 export function AdminSubjects({ actor }: { actor: User }) {
@@ -85,6 +87,7 @@ export function AdminTypes() {
   </main>
 }
 export function AdminDocumentForm({ doc }: { doc: ManagedDocument }) {
+  const concurrency = useMetadataConflict(doc)
   const [type, setType] = useState(doc.document_type_id ?? '')
   const [selected, setSelected] = useState(doc.subject_ids)
   const [validation, setValidation] = useState('')
@@ -105,7 +108,16 @@ export function AdminDocumentForm({ doc }: { doc: ManagedDocument }) {
       ...(type !== (doc.document_type_id ?? '') ? { document_type_id: type || null } : {}),
       ...(selected.join() !== doc.subject_ids.join() ? { subject_ids: selected } : {}),
     }
-    void state.run(() => api.patch(`/documents/${doc.document_id}`, values))
+    if (concurrency.conflict) return
+    void state.run(async () => {
+      try {
+        const { data } = await api.patch<{ metadata_revision: number }>(`/documents/${doc.document_id}`, { ...values, metadata_revision: concurrency.revision })
+        concurrency.setRevision(data.metadata_revision)
+      } catch (cause) {
+        if (isAxiosError(cause) && cause.response?.status === 409) concurrency.flag()
+        throw cause
+      }
+    })
   }
   return <Card><form onSubmit={submit}>
     <label>Título<Input name="title" required maxLength={255} defaultValue={doc.title} /></label>
@@ -117,6 +129,7 @@ export function AdminDocumentForm({ doc }: { doc: ManagedDocument }) {
       <label className="block" key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={event =>
         setSelected(event.target.checked ? [...selected, item.id] : selected.filter(id => id !== item.id))
       } /> {item.name}{!item.is_active && ' · Inactiva'}</label>)}</fieldset>
-    {(validation || state.error) && <Alert>{validation || state.error}</Alert>}<Button disabled={state.busy}>Guardar metadatos</Button>
+    {concurrency.notice}
+    {(validation || (!concurrency.conflict && state.error)) && <Alert>{validation || state.error}</Alert>}<Button disabled={state.busy || concurrency.conflict}>Guardar metadatos</Button>
   </form></Card>
 }

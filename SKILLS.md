@@ -67,6 +67,9 @@ Los escenarios E2E documentados usan `infrastructure/docker/compose.rf3-test.yam
 
 ## Docker and Infrastructure
 
+Aplica las validaciones aisladas y el orden de actualización de
+[integración final](docs/frontend-final-integration.md) al cambiar el catálogo.
+
 Para validar la [monitorización distribuida](docs/frontend-distributed-dashboard.md)
 usa un proyecto Compose y una base PostgreSQL aislados.
 

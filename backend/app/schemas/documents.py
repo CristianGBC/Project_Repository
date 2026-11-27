@@ -32,6 +32,7 @@ class DocumentMetadata(BaseModel):
     version_status: Literal["pending", "available", "failed"] | None = None
     target_replicas: int | None = None
     owner_id: UUID | None = None
+    metadata_revision: int | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("created_at")
     @classmethod
@@ -73,6 +74,7 @@ class DocumentLifecycleResponse(BaseModel):
 
 class DocumentUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    metadata_revision: int = Field(ge=1)
 
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None

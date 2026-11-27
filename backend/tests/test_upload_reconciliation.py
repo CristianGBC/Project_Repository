@@ -443,6 +443,8 @@ def test_soft_deleted_document_cancels_job_without_publication(
     _, document_id, version_id = upload_version(
         handler, session_factory, b"deleted partial"
     )
+    with session_factory.begin() as session:
+        session.add(ReconciliationJob(version_id=UUID(version_id), status="pending"))
     handler.standard_failures.clear()
     deleted = _request(
         handler,

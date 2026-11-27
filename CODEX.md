@@ -68,6 +68,8 @@ El catálogo central registra identidad, permisos, metadatos y estados. Los nodo
 
 ## Documentation Index
 
+- [Integración final del frontend](docs/frontend-final-integration.md).
+
 - [Monitorización distribuida](docs/frontend-distributed-dashboard.md) y
   [auditoría de consistencia](docs/distributed-consistency-audit.md).
 

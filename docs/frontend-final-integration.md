@@ -1,0 +1,21 @@
+# Integración final del frontend · Fase 7.6
+
+La edición docente y administrativa envía `metadata_revision` en PATCH /documents/{id}. PUT /documents/{id}/subjects acepta la misma revisión y devuelve la siguiente. Un formulario desactualizado recibe HTTP 409. La comparación y el incremento ocurren bajo el bloqueo de la fila del documento. La revisión empieza en 1, aumenta al editar, borrar o restaurar, y es independiente del número de versión del archivo. Publicar una versión no incrementa la revisión de metadatos. El formulario conserva los campos escritos, permite leer la revisión actual y exige confirmación antes de otro guardado.
+
+## Borrado concurrente
+
+La misma transacción que marca el borrado cancela las versiones pendientes o fallidas anteriores. Las conserva como fallidas con `publication_cancelled=true`. Conserva registros y archivos de las réplicas. Una transferencia que ya estaba en curso puede acabar de registrar su copia, pero el finalizador normal y el reconciliador impiden publicarla, también después de restaurar. Los trabajos previamente descubiertos llegan a estado cancelado cuando el reconciliador vuelve a examinarlos. El descubrimiento omite versiones canceladas. La reserva de números y la publicación conservan los bloqueos de fila. Las transferencias siguen fuera de esas transacciones. [Auditoría](distributed-consistency-audit.md).
+
+## Permisos y experiencia
+
+Las lecturas académicas autenticadas siguen disponibles entre escuelas para documentos publicados. Las versiones pendientes y fallidas se reservan para las vistas de gestión autorizadas. La gestión exige propiedad docente con membresía activa o administración autorizada de la escuela. Mis subidas muestra únicamente documentos propios de las escuelas en las que el profesor conserva una membresía activa. El inspector operativo global sigue reservado a superadministración. Ambos formularios usan el mismo panel de conflicto. El visor conserva la carga diferida de PDF.js y su worker, y cancela la transferencia al desmontar la versión. La validación Zod se empaqueta aparte. El módulo principal pasó de 722,10 kB a 641,02 kB minificados. Validación ocupa 82,33 kB aparte y puede seguir siendo parte de la carga inicial. El worker PDF permanece en 1.239,05 kB y se carga con el visor.
+
+## Actualización física posterior
+
+1. Confirma el commit autorizado que integra 7.5 y 7.6. Revisa el estado de Git en Angela-Dell y conserva configuraciones locales. Sigue el procedimiento de respaldo verificable de [PostgreSQL](postgresql.md).
+2. En Angela-Dell, usa el Compose físico con su archivo de variables. Comprueba que la conexión corresponde a la base autorizada y verifica `alembic current` y `heads` con la imagen nueva. Construye con `dc build coordinator frontend`.
+3. Abre una ventana sin escrituras. Detén `coordinator health-monitor replica-repair upload-reconciler frontend`, toma el respaldo final y verifícalo. Ejecuta `dc run --rm --no-deps --entrypoint python coordinator -m alembic -c backend/alembic.ini upgrade head`. Verifica la revisión `20261127_07`.
+4. Ejecuta `dc up -d --no-build --force-recreate coordinator health-monitor replica-repair upload-reconciler frontend`. Verifica `dc ps`, logs, `/health`, login, visualización PDF, edición, navegación por rol y monitorización. Los tres workers y el coordinador comparten la imagen nueva. El protocolo de almacenamiento y los archivos de nodo se mantienen compatibles.
+5. Ante un fallo, detén escrituras y workers. Recupera el checkout y las imágenes anteriores. Si necesitas revertir el esquema, hazlo dentro de la ventana antes de aceptar escrituras y conserva el respaldo. El downgrade elimina la información de revisiones y cancelaciones; una restauración verificada del respaldo es la opción para regresar exactamente al estado previo. Revisa las versiones pendientes antes de arrancar trabajadores anteriores.
+
+[Topología, configuración y rollback](physical-deployment.md). Para pruebas usa el procedimiento de [monitorización distribuida](frontend-distributed-dashboard.md) con PostgreSQL y Docker aislados. Para una corrida de 7.6, cambia el nombre de proyecto y `E2E_ISOLATED_PROJECT` a `yachayrepo-76-browser` y ejecuta `dc75 build health-monitor-test replica-repair-test` antes de arrancar los servicios.

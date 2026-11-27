@@ -21,7 +21,7 @@ from fastapi import HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 import httpx
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -399,6 +399,10 @@ def _finalize_replicated_version(
                 select(Document).where(Document.id == document_id).with_for_update()
             )
             version = session.get(DocumentVersion, version_id)
+            if document is not None and version is not None and (
+                document.deleted_at is not None or version.publication_cancelled
+            ):
+                raise HTTPException(409, "publication cancelled by document deletion")
             if document is None or version is None or version.status != "pending":
                 raise RuntimeError("pending catalog operation disappeared")
             replicas = session.scalars(
@@ -909,6 +913,7 @@ def replace_document_subjects(
     session_factory: sessionmaker[Session] | None,
     document_id: str,
     subject_ids: list[UUID],
+    metadata_revision: int,
 ) -> DocumentSubjectsResponse:
     if session_factory is None:
         raise _database_unavailable()
@@ -920,6 +925,8 @@ def replace_document_subjects(
             )
             if document is None or document.deleted_at is not None:
                 raise HTTPException(404, "document does not exist")
+            if document.metadata_revision != metadata_revision:
+                raise HTTPException(409, "metadata revision conflict")
             document_type = (
                 session.get(DocumentType, document.document_type_id)
                 if document.document_type_id
@@ -928,11 +935,13 @@ def replace_document_subjects(
             subjects = _active_subjects(session, subject_ids, document.school_id)
             _validate_subject_requirement(document_type, subjects)
             document.subjects = subjects
+            document.metadata_revision += 1
             document.updated_at = datetime.now(timezone.utc)
             session.flush()
             return DocumentSubjectsResponse(
                 document_id=document.id,
                 subjects=_subject_summaries(subjects),
+                metadata_revision=document.metadata_revision,
             )
     except HTTPException:
         raise
@@ -1088,7 +1097,9 @@ async def download_document_version(
     if session_factory is None:
         raise _database_unavailable()
     record = _specific_version_record(session_factory, document_id, version_number)
-    if record.version.status != "available" or not record.replicas:
+    if record.version.status != "available":
+        raise HTTPException(404, "document version does not exist")
+    if not record.replicas:
         raise HTTPException(409, "document version has no healthy replica")
     storage_id = (
         record.document.id if record.version.version_number == 1 else record.version.id
@@ -1135,6 +1146,11 @@ def soft_delete_document(
             document.deleted_at = datetime.now(timezone.utc)
             document.deleted_by = user.id
             document.updated_at = document.deleted_at
+            document.metadata_revision += 1
+            session.execute(update(DocumentVersion).where(
+                DocumentVersion.document_id == document.id,
+                DocumentVersion.status.in_(("pending", "failed")),
+            ).values(status="failed", publication_cancelled=True))
             return DocumentLifecycleResponse(
                 document_id=document.id,
                 status="deleted",
@@ -1176,6 +1192,7 @@ def restore_document(
                 )
             document.deleted_at = None
             document.deleted_by = None
+            document.metadata_revision += 1
             document.updated_at = datetime.now(timezone.utc)
             return DocumentLifecycleResponse(
                 document_id=document.id,
@@ -1262,6 +1279,7 @@ def _metadata_from_catalog(record: CatalogRecord) -> DocumentMetadata:
         version_status=version.status,
         target_replicas=version.target_replicas,
         owner_id=record.document.owner_id,
+        metadata_revision=record.document.metadata_revision,
     )
 
 

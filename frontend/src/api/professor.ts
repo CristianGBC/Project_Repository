@@ -14,8 +14,10 @@ export interface UploadVersion {
   attempts: number
   requires_intervention: boolean
   awaiting_reconciliation?: boolean
+  publication_cancelled?: boolean
 }
 export interface OwnDocument {
+  metadata_revision: number
   document_id: string
   school_id: string
   title: string
@@ -38,11 +40,12 @@ export const ownQuery = (params: Record<string, string | number | boolean | unde
   },
 })
 export const uploadInProgress = (version: UploadVersion) =>
-  version.reconciliation_status === 'pending' || version.reconciliation_status === 'retry_wait' ||
+  !version.publication_cancelled && (version.reconciliation_status === 'pending' || version.reconciliation_status === 'retry_wait' ||
   version.reconciliation_status === 'in_progress' ||
-  (version.reconciliation_status === null && (version.status === 'pending' || version.awaiting_reconciliation === true))
+  (version.reconciliation_status === null && (version.status === 'pending' || version.awaiting_reconciliation === true)))
 
 export function uploadLabel(version: UploadVersion) {
+  if (version.publication_cancelled) return 'Publicación cancelada por eliminación'
   if (version.status === 'available') return 'Publicado'
   if (version.reconciliation_status === 'in_progress') return 'En recuperación'
   if (version.reconciliation_status === 'retry_wait' || version.awaiting_reconciliation) return 'Esperando recuperación'

@@ -323,12 +323,18 @@ def test_professor_upload_uses_authenticated_owner_and_school_scope(auth_catalog
     forbidden_update = api_request(
         session_factory, settings, "PATCH", f"/documents/{document_id}",
         token=token_for(outsider, settings), handler=handler,
-        json={"title": "Stolen title"},
+        json={"title": "Stolen title", "metadata_revision": 1},
     )
     owner_update = api_request(
         session_factory, settings, "PATCH", f"/documents/{document_id}",
-        token=token, handler=handler, json={"title": "Updated by owner"},
+        token=token, handler=handler, json={"title": "Updated by owner", "metadata_revision": 1},
     )
+    stale_update = api_request(
+        session_factory, settings, "PATCH", f"/documents/{document_id}",
+        token=token, handler=handler, json={"title": "Stale", "metadata_revision": 1},
+    )
+    assert stale_update.status_code == 409
+    assert owner_update.json()["metadata_revision"] == 2
     new_version = api_request(
         session_factory, settings, "POST", f"/documents/{document_id}/versions",
         token=token, handler=handler,
@@ -355,6 +361,17 @@ def test_professor_upload_uses_authenticated_owner_and_school_scope(auth_catalog
         assert document.owner_id == professor.id
         assert document.created_by == professor.id
         assert document.school_id == "school-math"
+    with session_factory.begin() as session:
+        membership = session.scalar(select(SchoolMembership).where(
+            SchoolMembership.user_id == professor.id, SchoolMembership.school_id == "school-math",
+        ))
+        membership.is_active = False
+    assert api_request(session_factory, settings, "GET", path, token=token).json() == []
+    history = api_request(session_factory, settings, "GET", f"/documents/{document_id}/versions", token=token)
+    assert history.status_code == 200 and all(item["status"] == "available" for item in history.json()["versions"])
+    blocked = api_request(session_factory, settings, "PATCH", f"/documents/{document_id}", token=token,
+                          json={"title": "Forbidden", "metadata_revision": 2})
+    assert blocked.status_code == 403
 
 
 def test_school_admin_scope_and_admin_without_professor_cannot_upload(auth_catalog) -> None:

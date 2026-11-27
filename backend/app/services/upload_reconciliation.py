@@ -112,6 +112,7 @@ class UploadReconciler:
                 select(DocumentVersion.id)
                 .join(DocumentReplica, DocumentReplica.version_id == DocumentVersion.id)
                 .where(DocumentVersion.status.in_(("pending", "failed")))
+                .where(DocumentVersion.publication_cancelled.is_(False))
                 .distinct()
             ).all()
             created = 0
@@ -229,12 +230,13 @@ class UploadReconciler:
                 job.last_error = "document no longer exists"
                 job.updated_at = now
                 return None
+            session.refresh(version)
             if version.status == "available":
                 job.status = "completed"
                 job.completed_at = now
                 job.updated_at = now
                 return None
-            if document.deleted_at is not None:
+            if document.deleted_at is not None or version.publication_cancelled:
                 job.status = "cancelled"
                 job.last_error = "document is soft-deleted"
                 job.completed_at = now
@@ -658,6 +660,12 @@ class UploadReconciler:
             attempt = session.get(ReconciliationAttempt, state.attempt_id)
             if job is None or attempt is None:
                 raise RuntimeError("reconciliation audit disappeared")
+            version = session.get(DocumentVersion, state.version_id)
+            if version is not None and version.publication_cancelled:
+                job.status = attempt.outcome = "cancelled"
+                job.next_attempt_at = None
+                job.completed_at = job.updated_at = attempt.finished_at = now
+                return ReconciliationResult(state.version_id, "cancelled", "publication cancelled")
             # Waiting for every potential source to come back is a probe state,
             # not an attempted transfer. Keep its durable backoff active even
             # after the transfer-attempt budget has been reached; otherwise a
@@ -710,7 +718,7 @@ class UploadReconciler:
             attempt = session.get(ReconciliationAttempt, state.attempt_id)
             if document is None or version is None or job is None or attempt is None:
                 raise RuntimeError("publication catalog state disappeared")
-            if document.deleted_at is not None:
+            if document.deleted_at is not None or version.publication_cancelled:
                 raise RuntimeError("document was soft-deleted during reconciliation")
             replicas = session.scalars(
                 select(DocumentReplica)
