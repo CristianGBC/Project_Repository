@@ -23,6 +23,9 @@ nodos institucionales distribuidos entre dos computadoras Ubuntu.
 
 ## Arquitectura implementada
 
+La [monitorización distribuida](docs/frontend-distributed-dashboard.md) reúne
+topología, salud, réplicas por versión y reconciliación en `/admin/operations`.
+
 ```mermaid
 flowchart TD
     Client[Cliente] -->|HTTP puerto 8000| Coordinator[Coordinador FastAPI]

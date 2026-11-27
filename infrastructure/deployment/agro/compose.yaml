@@ -25,7 +25,7 @@ services:
     environment:
       <<: *storage
       NODE_ID: node-agro
-      SCHOOL_NAME: undefined
+      SCHOOL_NAME: Escuela de Ciencias Agropecuarias y Agroindustriales
     ports:
       - "${BIND_IP:?required}:${AGRO_PORT:-8106}:8000"
     volumes:

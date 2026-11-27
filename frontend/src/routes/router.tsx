@@ -153,10 +153,55 @@ const audit = createRoute({
   beforeLoad: ({ context }) => requireGlobal(context.user),
   component: lazyRouteComponent(() => import('../features/administration/documents'), 'SecurityAudit'),
 })
+const Operations = lazyRouteComponent(() => import('../features/operations/dashboard'), 'Operations')
+const opsoverview = createRoute({
+  getParentRoute: () => administration, path: '/operations',
+  component: () => <Operations page="overview" global={isSuperAdmin(administration.useRouteContext().user)} key="overview" />,
+})
+const opstopology = createRoute({
+  getParentRoute: () => administration, path: '/operations/topology',
+  beforeLoad: ({ context }) => requireGlobal(context.user),
+  component: () => <Operations page="topology" global={isSuperAdmin(administration.useRouteContext().user)} key="topology" />,
+})
+const opsnodes = createRoute({
+  getParentRoute: () => administration, path: '/operations/nodes',
+  component: () => <Operations page="nodes" global={isSuperAdmin(administration.useRouteContext().user)} key="nodes" />,
+})
+const opsnode = createRoute({
+  getParentRoute: () => administration, path: '/operations/nodes/$nodeId',
+  beforeLoad: ({ context }) => requireGlobal(context.user),
+  component: () => <Operations page="node" global={isSuperAdmin(administration.useRouteContext().user)} id={opsnode.useParams().nodeId} key={opsnode.useParams().nodeId} />,
+})
+const opsreplicas = createRoute({
+  getParentRoute: () => administration, path: '/operations/replicas',
+  beforeLoad: ({ context }) => requireGlobal(context.user),
+  component: () => <Operations page="replicas" global={isSuperAdmin(administration.useRouteContext().user)} key="replicas" />,
+})
+const opsdocument = createRoute({
+  getParentRoute: () => administration, path: '/operations/documents/$documentId',
+  beforeLoad: ({ context }) => requireGlobal(context.user),
+  component: () => <Operations page="document" global={isSuperAdmin(administration.useRouteContext().user)} id={opsdocument.useParams().documentId} key={opsdocument.useParams().documentId} />,
+})
+const opsdeficits = createRoute({
+  getParentRoute: () => administration, path: '/operations/deficits',
+  beforeLoad: ({ context }) => requireGlobal(context.user),
+  component: () => <Operations page="deficits" global={isSuperAdmin(administration.useRouteContext().user)} key="deficits" />,
+})
+const opsreconciliation = createRoute({
+  getParentRoute: () => administration, path: '/operations/reconciliation',
+  beforeLoad: ({ context }) => requireGlobal(context.user),
+  component: () => <Operations page="reconciliation" global={isSuperAdmin(administration.useRouteContext().user)} key="reconciliation" />,
+})
+const opsjob = createRoute({
+  getParentRoute: () => administration, path: '/operations/reconciliation/$jobId',
+  beforeLoad: ({ context }) => requireGlobal(context.user),
+  component: () => <Operations page="job" global={isSuperAdmin(administration.useRouteContext().user)} id={opsjob.useParams().jobId} key={opsjob.useParams().jobId} />,
+})
 export function makeRouter(session: Session, history?: RouterHistory) {
   const professorRoutes = professor.addChildren([owned, deleted, uploads, newDocument, ownedDetail, editDocument, newVersion])
   const adminRoutes = administration.addChildren([adminUsers, newUser, readUser, editUser, adminMemberships,
-    adminSubjects, adminTypes, adminDocuments, readManagedDocument, editManagedDocument, audit])
+    adminSubjects, adminTypes, adminDocuments, readManagedDocument, editManagedDocument, audit,
+    opsoverview, opstopology, opsnodes, opsnode, opsreplicas, opsdocument, opsdeficits, opsreconciliation, opsjob])
   const router = createRouter({ routeTree: root.addChildren([login, forbidden, protectedRoute.addChildren([home, profile, password, documents, documentDetail, schools, school, subject, professorRoutes, adminRoutes])]), context: { session }, history, defaultPendingMs: 0 })
   session.onEnd(() => { void router.navigate({ to: '/login', replace: true }) })
   return router

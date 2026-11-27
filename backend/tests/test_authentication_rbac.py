@@ -423,6 +423,25 @@ def test_school_admin_user_reads_and_mutates_only_its_memberships(auth_catalog) 
     assert api_request(factory, settings, "DELETE", path + "/memberships/" + added.json()["id"], token=token).status_code == 204
 
 
+def test_operations_dashboard_permissions(auth_catalog) -> None:
+    factory, settings = auth_catalog
+    school_admin = create_user(factory, email=f"ops-school-{uuid4()}@example.edu",
+                               memberships=(("school-math", "school_admin"),))
+    global_admin = create_user(factory, email=f"ops-global-{uuid4()}@example.edu",
+                                global_role="super_admin")
+    student = create_user(factory, email=f"ops-student-{uuid4()}@example.edu",
+                          memberships=(("school-math", "student"),))
+    for path in ("overview", "hosts", "replicas", "deficits", "reconciliation/jobs"):
+        endpoint = "/operations/" + path
+        assert api_request(factory, settings, "GET", endpoint, token=token_for(school_admin, settings)).status_code == 403
+        assert api_request(factory, settings, "GET", endpoint, token=token_for(global_admin, settings)).status_code == 200
+    endpoint = "/operations/nodes"
+    basic = api_request(factory, settings, "GET", endpoint, token=token_for(school_admin, settings))
+    assert basic.status_code == 200
+    assert basic.json() and all("port" not in row for row in basic.json())
+    assert api_request(factory, settings, "GET", endpoint, token=token_for(student, settings)).status_code == 403
+
+
 def test_administrative_documents_scope_includes_legacy_without_owner(auth_catalog) -> None:
     factory, settings = auth_catalog
     administrator = create_user(factory, email=f"doc-admin-{uuid4()}@example.edu",

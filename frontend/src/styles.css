@@ -108,3 +108,18 @@ form { display: grid; gap: 1rem; margin: 1.6rem 0 1rem; }
   .mobile-brand, .mobile-menu { display: block; }
   .mobile-brand { margin-bottom: 2.5rem; }
 }
+.ops-page { display: grid; gap: 1rem; min-width: 0; }
+.ops-page nav, .ops-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.ops-page nav a, .ops-toolbar button { padding: .45rem .7rem; border: 1px solid currentColor; border-radius: .4rem; }
+.ops-page nav a[aria-current="page"] { font-weight: 700; }
+.ops-toolbar label { display: grid; gap: .25rem; }
+.ops-toolbar input, .ops-toolbar select { border: 1px solid currentColor; border-radius: .35rem; padding: .35rem; }
+.ops-toolbar button:disabled { opacity: .5; }
+.ops-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 1rem; }
+.ops-panel { padding: 1rem; border: 1px solid #8b96a766; border-radius: .65rem; }
+.ops-panel strong { font-size: 1.8rem; }
+.ops-table { overflow-x: auto; }
+.ops-table table { width: 100%; border-collapse: collapse; text-align: left; }
+.ops-table th, .ops-table td { padding: .55rem; border-bottom: 1px solid #8b96a766; }
+.ops-table a, .ops-panel a { text-decoration: underline; }
+.ops-hash { overflow-wrap: anywhere; }

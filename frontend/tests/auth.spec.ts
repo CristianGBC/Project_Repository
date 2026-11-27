@@ -75,6 +75,17 @@ for (const [role, label] of [['student', 'Estudiante'], ['professor', 'Profesor'
       await context.setOffline(false)
       await page.getByRole('button', { name: 'Reintentar' }).click()
       await expect(page.getByRole('heading', { name: /^Hola/ })).toBeVisible()
+      await page.goto('/admin/operations')
+      if (role === 'school_admin') {
+        await expect(page.getByRole('heading', { name: 'Nodos lógicos' })).toBeVisible()
+        await expect(page.getByRole('link', { name: 'Topología', exact: true })).toHaveCount(0)
+        await page.goto('/admin/operations/nodes')
+        await expect(page.getByRole('columnheader', { name: 'Salud', exact: true })).toBeVisible()
+        await expect(page.getByRole('columnheader', { name: 'Puerto', exact: true })).toHaveCount(0)
+        await page.goto('/admin/operations/topology')
+      }
+      await expect(page).toHaveURL(/\/403$/)
+      await page.goto('/profile')
       expect((await request.post(api + `/users/${id}/deactivate`, { headers })).ok()).toBeTruthy()
       await page.reload()
       await expect(page).toHaveURL(/\/login$/)

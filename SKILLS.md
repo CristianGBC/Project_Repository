@@ -67,6 +67,9 @@ Los escenarios E2E documentados usan `infrastructure/docker/compose.rf3-test.yam
 
 ## Docker and Infrastructure
 
+Para validar la [monitorización distribuida](docs/frontend-distributed-dashboard.md)
+usa un proyecto Compose y una base PostgreSQL aislados.
+
 Usa [la guía de despliegue físico](docs/physical-deployment.md) para 8.3.
 Valida el Compose del dispositivo y revisa `physical_catalog preview` antes
 de actualizar destinos. Confirma los archivos de las réplicas antes de cambiar
